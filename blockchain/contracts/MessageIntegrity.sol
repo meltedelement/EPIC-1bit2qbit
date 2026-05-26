@@ -112,8 +112,8 @@ contract MessageIntegrity {
 
     /// @notice Transfers ownership to a new wallet address.
     /// @dev Single-step transfer: takes effect immediately on call. Caller is responsible
-    ///      for ensuring newOwner is a valid, accessible address. Specifically choosing not 
-    ///      to implement the newer Ownable2Step, as it it out of scope for this project.
+    ///      for ensuring newOwner is a valid, accessible address. Specifically choosing not
+    ///      to implement the newer Ownable2Step, as it is out of scope for this project.
     /// @param newOwner The address to transfer ownership to; must not be the zero address.
     function transferOwnership(address newOwner) external onlyOwner {
         if (newOwner == address(0)) revert InvalidAddress();
