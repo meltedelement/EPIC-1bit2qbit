@@ -1,0 +1,30 @@
+# Environment variables — never commit secrets
+.env
+.env.local
+.env.*.local
+
+# Hardhat
+blockchain/artifacts/
+blockchain/cache/
+blockchain/node_modules/
+
+# Server
+server/node_modules/
+server/.env
+
+# Web app
+server/web-app/node_modules/
+server/web-app/.env
+server/web-app/dist/
+server/web-app/build/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
