@@ -32,13 +32,12 @@ flowchart TD
     classDef store     fill:#6A1B9A,stroke:#4A148C,color:#fff
 
     A([POST /login]):::terminal --> B["Verify credentials"]:::process
-    B -- invalid --> C{"2FA required?"}:::decision
-    C -- yes --> D["Redirect to verification webapp"]:::process
-    D --> E([Return 401 + redirect]):::error
-    C -- no --> F([Return 401]):::error
-    B -- valid --> G["Create session / set online"]:::process
-    G --> H["Drain offline message queue (up to TTL)"]:::store
-    H --> I([Return session token]):::ok
+    B -- invalid --> C([Return 401]):::error
+    B -- valid --> D{"2FA required?"}:::decision
+    D -- yes --> E["Return 302 — redirect to verification webapp"]:::error
+    D -- no --> F["Create session / set online"]:::process
+    F --> G["Drain offline message queue (up to TTL)"]:::store
+    G --> H([Return session token]):::ok
 ```
 
 ---
