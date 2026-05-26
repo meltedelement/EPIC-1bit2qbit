@@ -1,0 +1,10 @@
+[network]
+external_host = "https://1bit2qbit.theburkenator.com"
+vm_address    = "200.69.13.70"
+
+[services.web_app]
+internal_port = 80
+
+# [services.backend]
+# internal_port = TBD
+# external_port = TBD
