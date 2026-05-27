@@ -4,8 +4,6 @@ from unittest.mock import patch
 
 from web3 import Web3
 
-from batcher import MAX_LEAVES, _build_tree, _get_root, _hash_pair, _make_leaf, push
-
 
 class TestMakeLeaf:
     def test_deterministic(self):
