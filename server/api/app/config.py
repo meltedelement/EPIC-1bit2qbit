@@ -13,8 +13,13 @@ _CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.toml"
 
 
 def _load() -> dict:
-    with _CONFIG_PATH.open("rb") as f:
-        return tomllib.load(f)
+    try:
+        with _CONFIG_PATH.open("rb") as f:
+            return tomllib.load(f)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Server config not found: {_CONFIG_PATH}") from None
+    except tomllib.TOMLDecodeError as e:
+        raise ValueError(f"Invalid TOML in {_CONFIG_PATH}: {e}") from e
 
 
 _cfg = _load()
