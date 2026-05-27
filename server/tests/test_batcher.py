@@ -26,9 +26,7 @@ class TestMakeLeaf:
 class TestHashPair:
     def test_commutative(self):
         a, b = _make_leaf("a"), _make_leaf("b")
-        assert _hash_pair(a, b) == _hash_pair(
-            b, a
-        )  # pylint: disable=arguments-out-of-order
+        assert _hash_pair(a, b) == _hash_pair(b, a)  # pylint: disable=arguments-out-of-order
 
     def test_output_is_32_bytes(self):
         assert len(_hash_pair(_make_leaf("a"), _make_leaf("b"))) == 32

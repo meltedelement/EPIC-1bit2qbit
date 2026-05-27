@@ -50,9 +50,7 @@ def _submit_batch(messages: list[str]) -> dict:
     if not messages:
         raise ValueError("Cannot submit empty batch")
     if len(messages) > MAX_LEAVES:
-        raise ValueError(
-            f"Batch exceeds MAX_LEAVES limit ({len(messages)} > {MAX_LEAVES})"
-        )
+        raise ValueError(f"Batch exceeds MAX_LEAVES limit ({len(messages)} > {MAX_LEAVES})")
 
     rpc_url = os.getenv("SEPOLIA_RPC_URL")
     contract_address = os.getenv("CONTRACT_ADDRESS")
@@ -68,15 +66,11 @@ def _submit_batch(messages: list[str]) -> dict:
         if val is None
     ]
     if missing:
-        raise ValueError(
-            f"Missing required environment variable(s): {', '.join(missing)}"
-        )
+        raise ValueError(f"Missing required environment variable(s): {', '.join(missing)}")
 
     w3 = Web3(Web3.HTTPProvider(rpc_url))
 
-    with open(
-        os.path.join(os.path.dirname(__file__), "abi.json"), encoding="utf-8"
-    ) as f:
+    with open(os.path.join(os.path.dirname(__file__), "abi.json"), encoding="utf-8") as f:
         contract_abi = json.load(f)["abi"]
 
     contract = w3.eth.contract(
@@ -107,9 +101,7 @@ def _submit_batch(messages: list[str]) -> dict:
 
     events = contract.events.BatchRecorded().process_receipt(receipt)
     if not events:
-        raise ValueError(
-            f"BatchRecorded event not found in transaction {tx_hash.hex()}"
-        )
+        raise ValueError(f"BatchRecorded event not found in transaction {tx_hash.hex()}")
 
     batch_index = events[0]["args"]["batchIndex"]
 
