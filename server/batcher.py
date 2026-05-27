@@ -7,7 +7,7 @@ from web3 import Web3
 load_dotenv()
 
 
-def make_leaf(message: str) -> bytes:
+def _make_leaf(message: str) -> bytes:
     first = Web3.solidity_keccak(['bytes'], [message.encode('utf-8')])
     second = Web3.solidity_keccak(['bytes32'], [first])
     # Double-hash so leaves and internal nodes are produced by structurally
@@ -16,14 +16,14 @@ def make_leaf(message: str) -> bytes:
     return second
 
 
-def hash_pair(a: bytes, b: bytes) -> bytes:
+def _hash_pair(a: bytes, b: bytes) -> bytes:
     left, right = (a, b) if a <= b else (b, a)
     # Sort before hashing (sortPairs convention): the verifier never needs to
     # know which side a sibling sits on — it always sorts before hashing.
     return Web3.solidity_keccak(['bytes32', 'bytes32'], [left, right])
 
 
-def build_tree(leaves: list[bytes]) -> list[list[bytes]]:
+def _build_tree(leaves: list[bytes]) -> list[list[bytes]]:
     if not leaves:
         raise ValueError("Cannot build Merkle tree from empty leaf list")
 
@@ -33,20 +33,20 @@ def build_tree(leaves: list[bytes]) -> list[list[bytes]]:
     while len(layer) > 1:
         if len(layer) % 2 == 1:
             layer = layer + [layer[-1]]
-        layer = [hash_pair(layer[i], layer[i + 1]) for i in range(0, len(layer), 2)]
+        layer = [_hash_pair(layer[i], layer[i + 1]) for i in range(0, len(layer), 2)]
         tree.append(layer)
 
     return tree
 
 
-def get_root(tree: list[list[bytes]]) -> bytes:
+def _get_root(tree: list[list[bytes]]) -> bytes:
     return tree[-1][0]
 
 
 MAX_LEAVES = 8_000
 
 
-def submit_batch(messages: list[str]) -> dict:
+def _submit_batch(messages: list[str]) -> dict:
     if not messages:
         raise ValueError("Cannot submit empty batch")
     if len(messages) > MAX_LEAVES:
@@ -63,9 +63,9 @@ def submit_batch(messages: list[str]) -> dict:
     )
 
     account = w3.eth.account.from_key(os.environ["PRIVATE_KEY"])
-    leaves = [make_leaf(m) for m in messages]
-    tree = build_tree(leaves)
-    root = get_root(tree)
+    leaves = [_make_leaf(m) for m in messages]
+    tree = _build_tree(leaves)
+    root = _get_root(tree)
     sorted_leaves = tree[0]
 
     tx = contract.functions.recordBatch(root, sorted_leaves).build_transaction({
@@ -94,5 +94,5 @@ def push(messages: list[str]) -> list[dict]:
 
     results = []
     for i in range(0, len(messages), MAX_LEAVES):
-        results.append(submit_batch(messages[i:i + MAX_LEAVES]))
+        results.append(_submit_batch(messages[i:i + MAX_LEAVES]))
     return results
