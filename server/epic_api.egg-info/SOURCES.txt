@@ -1,0 +1,7 @@
+pyproject.toml
+epic_api.egg-info/PKG-INFO
+epic_api.egg-info/SOURCES.txt
+epic_api.egg-info/dependency_links.txt
+epic_api.egg-info/entry_points.txt
+epic_api.egg-info/requires.txt
+epic_api.egg-info/top_level.txt

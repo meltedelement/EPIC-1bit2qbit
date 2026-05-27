@@ -1,0 +1,3 @@
+[console_scripts]
+epic-api = server.run:main
+epic-api-initdb = server.run:init_db
