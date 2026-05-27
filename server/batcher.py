@@ -52,17 +52,29 @@ def _submit_batch(messages: list[str]) -> dict:
     if len(messages) > MAX_LEAVES:
         raise ValueError(f"Batch exceeds MAX_LEAVES limit ({len(messages)} > {MAX_LEAVES})")
 
-    w3 = Web3(Web3.HTTPProvider(os.environ["SEPOLIA_RPC_URL"]))
+    rpc_url = os.getenv("SEPOLIA_RPC_URL")
+    contract_address = os.getenv("CONTRACT_ADDRESS")
+    private_key = os.getenv("PRIVATE_KEY")
+
+    missing = [name for name, val in [
+        ("SEPOLIA_RPC_URL", rpc_url),
+        ("CONTRACT_ADDRESS", contract_address),
+        ("PRIVATE_KEY", private_key),
+    ] if val is None]
+    if missing:
+        raise ValueError(f"Missing required environment variable(s): {', '.join(missing)}")
+
+    w3 = Web3(Web3.HTTPProvider(rpc_url))
 
     with open(os.path.join(os.path.dirname(__file__), "abi.json")) as f:
         contract_abi = json.load(f)["abi"]
 
     contract = w3.eth.contract(
-        address=os.environ["CONTRACT_ADDRESS"],
+        address=contract_address,
         abi=contract_abi,
     )
 
-    account = w3.eth.account.from_key(os.environ["PRIVATE_KEY"])
+    account = w3.eth.account.from_key(private_key)
     leaves = [_make_leaf(m) for m in messages]
     tree = _build_tree(leaves)
     root = _get_root(tree)
@@ -74,7 +86,7 @@ def _submit_batch(messages: list[str]) -> dict:
         "gasPrice": w3.eth.gas_price,
     })
 
-    signed = w3.eth.account.sign_transaction(tx, private_key=os.environ["PRIVATE_KEY"])
+    signed = w3.eth.account.sign_transaction(tx, private_key=private_key)
     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
     receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
 
