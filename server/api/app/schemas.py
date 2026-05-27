@@ -4,7 +4,6 @@ from pydantic import BaseModel
 class RegisterRequest(BaseModel):
     username: str
     auth_key: str  # hex-encoded 32-byte HKDF-derived key, never the raw password
-    salt: str      # hex-encoded 32-byte Argon2 salt, generated client-side
 
 
 class RegisterResponse(BaseModel):
