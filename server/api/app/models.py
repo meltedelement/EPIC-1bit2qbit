@@ -9,4 +9,5 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    password: Mapped[str] = mapped_column(String(255))
+    auth_key: Mapped[str] = mapped_column(String(64))   # 32-byte key as hex
+    salt: Mapped[str] = mapped_column(String(64))       # 32-byte salt as hex
