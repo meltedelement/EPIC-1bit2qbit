@@ -5,12 +5,13 @@ import pytest
 from unittest.mock import patch
 
 from unittest.mock import patch
- 
+
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from batcher import _make_leaf, _hash_pair, _build_tree, _get_root, MAX_LEAVES, push
+from batcher import (MAX_LEAVES, _build_tree, _get_root, _hash_pair,
+                     _make_leaf, push)
 
 
 class TestMakeLeaf:
@@ -25,7 +26,7 @@ class TestMakeLeaf:
 
     def test_double_hash_differs_from_single(self):
         from web3 import Web3
-        
+
         single = Web3.solidity_keccak(["bytes"], ["hello".encode("utf-8")])
         assert _make_leaf("hello") != single
 
@@ -36,7 +37,9 @@ class TestMakeLeaf:
 class TestHashPair:
     def test_commutative(self):
         a, b = _make_leaf("a"), _make_leaf("b")
-        assert _hash_pair(a, b) == _hash_pair(b, a)  # pylint: disable=arguments-out-of-order
+        assert _hash_pair(a, b) == _hash_pair(
+            b, a
+        )  # pylint: disable=arguments-out-of-order
 
     def test_output_is_32_bytes(self):
         assert len(_hash_pair(_make_leaf("a"), _make_leaf("b"))) == 32

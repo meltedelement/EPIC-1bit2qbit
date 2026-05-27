@@ -58,13 +58,19 @@ def _submit_batch(messages: list[str]) -> dict:
     contract_address = os.getenv("CONTRACT_ADDRESS")
     private_key = os.getenv("PRIVATE_KEY")
 
-    missing = [name for name, val in [
-        ("SEPOLIA_RPC_URL", rpc_url),
-        ("CONTRACT_ADDRESS", contract_address),
-        ("PRIVATE_KEY", private_key),
-    ] if val is None]
+    missing = [
+        name
+        for name, val in [
+            ("SEPOLIA_RPC_URL", rpc_url),
+            ("CONTRACT_ADDRESS", contract_address),
+            ("PRIVATE_KEY", private_key),
+        ]
+        if val is None
+    ]
     if missing:
-        raise ValueError(f"Missing required environment variable(s): {', '.join(missing)}")
+        raise ValueError(
+            f"Missing required environment variable(s): {', '.join(missing)}"
+        )
 
     w3 = Web3(Web3.HTTPProvider(rpc_url))
 
@@ -99,7 +105,9 @@ def _submit_batch(messages: list[str]) -> dict:
 
     events = contract.events.BatchRecorded().process_receipt(receipt)
     if not events:
-        raise ValueError(f"BatchRecorded event not found in transaction {tx_hash.hex()}")
+        raise ValueError(
+            f"BatchRecorded event not found in transaction {tx_hash.hex()}"
+        )
 
     batch_index = events[0]["args"]["batchIndex"]
 
