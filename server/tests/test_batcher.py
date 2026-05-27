@@ -1,7 +1,7 @@
 import random
-import pytest
 from unittest.mock import patch
 
+import pytest
 from web3 import Web3
 
 
