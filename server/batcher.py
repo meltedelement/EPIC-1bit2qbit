@@ -90,7 +90,14 @@ def _submit_batch(messages: list[str]) -> dict:
     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
     receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
 
-    batch_index = int.from_bytes(receipt.logs[0]["topics"][1], "big")
+    if receipt.status != 1:
+        raise ValueError(f"Transaction {tx_hash.hex()} reverted on-chain")
+
+    events = contract.events.BatchRecorded().process_receipt(receipt)
+    if not events:
+        raise ValueError(f"BatchRecorded event not found in transaction {tx_hash.hex()}")
+
+    batch_index = events[0]["args"]["batchIndex"]
 
     return {
         "tx_hash": tx_hash.hex(),
