@@ -127,8 +127,8 @@ contract MessageIntegrity {
     /// @param newOwner The address to transfer ownership to; must not be the zero address.
     function transferOwnership(address newOwner) external onlyOwner {
         if (newOwner == address(0)) revert InvalidAddress(); 
-        emit OwnershipTransferred(owner, newOwner);
         owner = newOwner;
+        emit OwnershipTransferred(owner, newOwner);
     }
 
     /// @notice Returns the Merkle root and timestamp for a recorded batch.

@@ -5,9 +5,9 @@ const { ethers } = pkg;
 // Shared test data
 // ---------------------------------------------------------------------------
 
-export const leaf1 = ethers.keccak256(ethers.toUtf8Bytes('message one'));
-export const leaf2 = ethers.keccak256(ethers.toUtf8Bytes('message two'));
-export const leaf3 = ethers.keccak256(ethers.toUtf8Bytes('message three'));
+export const leaf1 = ethers.keccak256(ethers.keccak256(ethers.toUtf8Bytes('message one')));
+export const leaf2 = ethers.keccak256(ethers.keccak256(ethers.toUtf8Bytes('message two')));
+export const leaf3 = ethers.keccak256(ethers.keccak256(ethers.toUtf8Bytes('message three')));
 export const sampleLeaves = [leaf1, leaf2, leaf3];
 
 // Contract does not verify root consistency with leaves — any valid bytes32 works here

@@ -15,7 +15,7 @@ async function main() {
   const tx = contract.deploymentTransaction();
   const receipt = await tx.wait();
 
-  const gasCostWei = receipt.gasUsed * receipt.gasPrice;
+  const gasCostWei = receipt.gasUsed * receipt.effectiveGasPrice;
 
   console.log('\nDeployment successful');
   console.log('  Contract address :', address);
