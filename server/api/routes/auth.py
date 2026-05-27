@@ -7,13 +7,16 @@ from ..database.models import User
 from ..database.schemas import RegisterRequest, RegisterResponse
 from ..security.passwords import hash_password
 
-
 router = APIRouter(tags=["auth"])
 
 
-@router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED
+)
 def register(req: RegisterRequest, db: Session = Depends(get_db)) -> RegisterResponse:
-    hashed = hash_password(req.auth_key)  # always runs — constant-time regardless of username collision
+    hashed = hash_password(
+        req.auth_key
+    )  # always runs — constant-time regardless of username collision
     user = User(username=req.username, auth_key=hashed, salt=req.salt)
     try:
         db.add(user)
