@@ -1,82 +1,68 @@
-import doubleratchet
-import cryptography
+from typing import Any, Dict
 
-from doubleratchet import DoubleRatchet, DiffieHellmanRatchet, AEAD, KDF, Header
-from cryptography.hazmat.primitives import hashes, hmac
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from doubleratchet import DoubleRatchet as DR, Header
+from doubleratchet.recommended import (
+    diffie_hellman_ratchet_curve25519 as dhr25519,
+    HashFunction,
+    kdf_hkdf,
+    kdf_separate_hmacs,
+)
 
 
-class DoubleRatchetKDF(KDF):
+class DoubleRatchet(DR):
     @staticmethod
-    def derive(key: bytes, data: bytes, length: int) -> bytes:
-        hkdf = HKDF(
-            algorithm=hashes.SHA256(),
-            length=length,
-            salt=key,
-            info=b"doubleratchet",
-        )
-        return hkdf.derive(data)
-
-
-class X25519DiffieHellmanRatchet(DiffieHellmanRatchet):
-    @staticmethod
-    def generate_keypair() -> tuple[bytes, bytes]:
-        private_key = X25519PrivateKey.generate()
-        public_key = private_key.public_key()
+    def _build_associated_data(associated_data: bytes, header: Header) -> bytes:
         return (
-            private_key.private_bytes_raw(),
-            public_key.public_bytes_raw(),
+            associated_data
+            + header.ratchet_pub
+            + header.sending_chain_length.to_bytes(8, "big")
+            + header.previous_sending_chain_length.to_bytes(8, "big")
         )
 
+
+class DiffieHellmanRatchet(dhr25519.DiffieHellmanRatchet):
+    pass
+
+
+class RootChainKDF(kdf_hkdf.KDF):
     @staticmethod
-    def dh(private_key: bytes, public_key: bytes) -> bytes:
-        priv = X25519PrivateKey.from_private_bytes(private_key)
-        pub = X25519PublicKey.from_public_bytes(public_key)
-        return priv.exchange(pub)
-
-
-class AES256GCMAEAD(AEAD):
-    NONCE_SIZE = 12  # 96 bits, recommended for GCM
-    KEY_SIZE = 32    # 256 bits
-
-    @staticmethod
-    def _build_nonce(counter: int) -> bytes:
-        return counter.to_bytes(AES256GCMAEAD.NONCE_SIZE, byteorder='big')
+    def _get_hash_function() -> HashFunction:
+        return HashFunction.SHA_256
 
     @staticmethod
-    def encrypt(key: bytes, plaintext: bytes, associated_data: bytes, counter: int) -> bytes:
-        nonce = AES256GCMAEAD._build_nonce(counter)
+    def _get_info() -> bytes:
+        return b"EPIC Root Chain KDF"
+
+
+class MessageChainKDF(kdf_separate_hmacs.KDF):
+    @staticmethod
+    def _get_hash_function() -> HashFunction:
+        return HashFunction.SHA_256
+
+
+class AES256GCMAEAD:
+    NONCE_SIZE = 12
+    KEY_SIZE = 32
+    NONCE = b"\x00" * 12  # Fixed nonce; safe because Double Ratchet uses unique keys per message
+
+    @staticmethod
+    async def encrypt(plaintext: bytes, key: bytes, associated_data: bytes) -> bytes:
         cipher = AESGCM(key)
-        return cipher.encrypt(nonce, plaintext, associated_data)
+        return cipher.encrypt(AES256GCMAEAD.NONCE, plaintext, associated_data)
 
     @staticmethod
-    def decrypt(key: bytes, ciphertext: bytes, associated_data: bytes, counter: int) -> bytes:
-        nonce = AES256GCMAEAD._build_nonce(counter)
+    async def decrypt(ciphertext: bytes, key: bytes, associated_data: bytes) -> bytes:
         cipher = AESGCM(key)
-        return cipher.decrypt(nonce, ciphertext, associated_data)
+        return cipher.decrypt(AES256GCMAEAD.NONCE, ciphertext, associated_data)
 
 
-class DoubleRatchetHeader(Header):
-    PUBLIC_KEY_SIZE = 32  # X25519 public key size
-
-    @staticmethod
-    def encode(public_key: bytes, prev_chain_length: int, message_number: int) -> bytes:
-        return (
-            public_key +
-            prev_chain_length.to_bytes(4, byteorder='big') +
-            message_number.to_bytes(4, byteorder='big')
-        )
-
-    @staticmethod
-    def decode(header: bytes) -> tuple[bytes, int, int]:
-        public_key = header[:DoubleRatchetHeader.PUBLIC_KEY_SIZE]
-        prev_chain_length = int.from_bytes(header[32:36], byteorder='big')
-        message_number = int.from_bytes(header[36:40], byteorder='big')
-        return (public_key, prev_chain_length, message_number)
-
-
-DoubleRatchet.encrypt_initial_message()
-
-
+dr_configuration: Dict[str, Any] = {
+    "diffie_hellman_ratchet_class": DiffieHellmanRatchet,
+    "root_chain_kdf": RootChainKDF,
+    "message_chain_kdf": MessageChainKDF,
+    "message_chain_constant": b"\x01\x02",
+    "dos_protection_threshold": 100,
+    "max_num_skipped_message_keys": 1000,
+    "aead": AES256GCMAEAD,
+}
