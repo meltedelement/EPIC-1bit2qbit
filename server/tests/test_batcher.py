@@ -2,6 +2,7 @@ import random
 from unittest.mock import patch
 
 import pytest
+from batcher import MAX_LEAVES, _build_tree, _get_root, _hash_pair, _make_leaf, add_to_blockchain
 from web3 import Web3
 
 
