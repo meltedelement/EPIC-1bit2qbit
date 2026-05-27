@@ -16,6 +16,8 @@ contract MessageIntegrity {
     error NotAuthorised();
     /// @notice Submitted leaf array is empty.
     error EmptyBatch();
+    /// @notice Submitted leaf array exceeds the per-batch maximum of MAX_LEAVES.
+    error BatchTooLarge();
     /// @notice Submitted Merkle root is the zero hash.
     error InvalidMerkleRoot();
     /// @notice Requested batch index is out of range.
@@ -28,6 +30,13 @@ contract MessageIntegrity {
         bytes32 merkleRoot;
         uint256 timestamp;
     }
+
+    /// @notice Hard cap on leaves per batch. The Sepolia block gas limit is 60 M gas; at
+    ///         ~2 000 gas per leaf (LeafRecorded event emission + calldata) and ~70 000 gas
+    ///         fixed overhead, the theoretical maximum is ~29 965 leaves per transaction.
+    ///         25 000 is set as the contract limit to provide headroom for gas price
+    ///         fluctuation and transaction estimator variance.
+    uint256 public constant MAX_LEAVES = 25_000;
 
     /// @notice Append-only array of all recorded batches.
     /// @dev The array index is permanent and used as the join key for LeafRecorded events.
@@ -98,6 +107,7 @@ contract MessageIntegrity {
         bytes32[] calldata leaves
     ) external onlyOwner {
         if (leaves.length == 0) revert EmptyBatch();
+        if (leaves.length > MAX_LEAVES) revert BatchTooLarge();
         if (merkleRoot == bytes32(0)) revert InvalidMerkleRoot();
 
         uint256 idx = batches.length;
@@ -116,7 +126,7 @@ contract MessageIntegrity {
     ///      to implement the newer Ownable2Step, as it is out of scope for this project.
     /// @param newOwner The address to transfer ownership to; must not be the zero address.
     function transferOwnership(address newOwner) external onlyOwner {
-        if (newOwner == address(0)) revert InvalidAddress();
+        if (newOwner == address(0)) revert InvalidAddress(); 
         emit OwnershipTransferred(owner, newOwner);
         owner = newOwner;
     }

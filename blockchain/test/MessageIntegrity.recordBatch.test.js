@@ -76,6 +76,15 @@ describe('MessageIntegrity — recordBatch', function () {
       ).to.be.revertedWithCustomError(contract, 'InvalidMerkleRoot');
     });
 
+    it('reverts BatchTooLarge when leaves array exceeds MAX_LEAVES', async function () {
+      const { contract } = await loadFixture(deployFixture);
+      const maxLeaves = Number(await contract.MAX_LEAVES());
+      const tooManyLeaves = Array(maxLeaves + 1).fill(leaf1);
+      await expect(
+        contract.recordBatch(sampleRoot, tooManyLeaves)
+      ).to.be.revertedWithCustomError(contract, 'BatchTooLarge');
+    });
+
   });
 
 });
