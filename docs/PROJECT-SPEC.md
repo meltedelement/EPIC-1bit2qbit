@@ -1,4 +1,4 @@
-# CS4455 Cybersecurity — Epic Project 2026
+# CS4436 Cybersecurity — Epic Project 2026
 
 ## Project Summary
 
@@ -31,18 +31,6 @@ Teams have flexibility in their messaging architecture (real-time, asynchronous,
 ### Overall Marking Scheme
 
 The CS4436 block is divided into four equally weighted subjects. Each subject contributes 25% to the overall epic project grade, for a total of 100%. Within each subject, marks are distributed across the criteria defined in that subject's rubric.
-
----
-
-## Key Dates
-
-| Milestone | Date |
-|---|---|
-| Brief released to students | Monday 18th May 2026 |
-| Weekly status report 1 | Friday 23rd May 2026, 5:00 PM |
-| Weekly status report 2 | Friday 30th May 2026, 5:00 PM |
-| **Project submission deadline** | **Wednesday 3rd June 2026, 5:00 PM** |
-| Presentations & interviews | 4th and 5th June 2026 |
 
 ---
 
