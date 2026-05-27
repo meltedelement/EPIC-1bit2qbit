@@ -1,10 +1,13 @@
-from flask import Flask
+"""Minimal FastAPI server."""
+import uvicorn
+from fastapi import FastAPI
 
-app = Flask(__name__)
+app = FastAPI()
 
-@app.route("/")
+@app.get("/")
 def index():
-    return "OK"
+    """Return health check."""
+    return {"status": "ok"}
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
