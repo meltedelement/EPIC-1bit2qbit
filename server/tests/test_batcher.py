@@ -93,15 +93,15 @@ class TestGetRoot:
         assert _get_root(tree) == tree[-1][0]
 
 
-class TestPush:
+class TestAddToBlockchain:
     def test_empty_raises(self):
         with pytest.raises(ValueError, match="empty"):
-            push([])
+            add_to_blockchain([])
 
     def test_single_chunk_calls_submit_once(self):
         fake = {"tx_hash": "0xabc", "root": "0xdef", "batch_index": 0, "leaf_count": 2}
         with patch("batcher._submit_batch", return_value=fake) as mock_submit:
-            result = push(["hello", "world"])
+            result = add_to_blockchain(["hello", "world"])
             mock_submit.assert_called_once_with(["hello", "world"])
             assert len(result) == 1
 
@@ -109,7 +109,7 @@ class TestPush:
         messages = [str(i) for i in range(MAX_LEAVES + 1)]
         fake = {"tx_hash": "0xabc", "root": "0xdef", "batch_index": 0, "leaf_count": 1}
         with patch("batcher._submit_batch", return_value=fake) as mock_submit:
-            result = push(messages)
+            result = add_to_blockchain(messages)
             assert mock_submit.call_count == 2
             assert len(mock_submit.call_args_list[0][0][0]) == MAX_LEAVES
             assert len(mock_submit.call_args_list[1][0][0]) == 1

@@ -121,7 +121,7 @@ def _submit_batch(messages: list[str]) -> dict:
     }
 
 
-def push(messages: list[str]) -> list[dict]:
+def add_to_blockchain(messages: list[str]) -> list[dict]:
     if not messages:
         raise ValueError("Cannot push empty message list")
 
