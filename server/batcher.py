@@ -74,7 +74,7 @@ def _submit_batch(messages: list[str]) -> dict:
 
     w3 = Web3(Web3.HTTPProvider(rpc_url))
 
-    with open(os.path.join(os.path.dirname(__file__), "abi.json")) as f:
+    with open(os.path.join(os.path.dirname(__file__), "abi.json"), encoding="utf-8") as f:
         contract_abi = json.load(f)["abi"]
 
     contract = w3.eth.contract(

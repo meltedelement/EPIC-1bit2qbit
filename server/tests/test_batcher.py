@@ -1,17 +1,10 @@
-import os
-import sys
-
+import random
 import pytest
 from unittest.mock import patch
 
-from unittest.mock import patch
+from web3 import Web3
 
-import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from batcher import (MAX_LEAVES, _build_tree, _get_root, _hash_pair,
-                     _make_leaf, push)
+from batcher import MAX_LEAVES, _build_tree, _get_root, _hash_pair, _make_leaf, push
 
 
 class TestMakeLeaf:
@@ -25,8 +18,6 @@ class TestMakeLeaf:
         assert _make_leaf("hello") != _make_leaf("world")
 
     def test_double_hash_differs_from_single(self):
-        from web3 import Web3
-
         single = Web3.solidity_keccak(["bytes"], ["hello".encode("utf-8")])
         assert _make_leaf("hello") != single
 
@@ -83,8 +74,6 @@ class TestBuildTree:
         assert _get_root(_build_tree(leaves)) == expected_root
 
     def test_leaf_layer_is_globally_sorted(self):
-        import random
-
         leaves = [_make_leaf(str(i)) for i in range(6)]
         random.shuffle(leaves)
         tree = _build_tree(leaves)
