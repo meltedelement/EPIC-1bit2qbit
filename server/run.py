@@ -9,6 +9,12 @@ import os
 import uvicorn
 
 from server.api.config import config
+from server.api.database.db import Base, engine
+
+
+def init_db() -> None:
+    Base.metadata.create_all(bind=engine)
+    print("Database schema created.")
 
 
 def main() -> None:
