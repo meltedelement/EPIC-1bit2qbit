@@ -1,5 +1,5 @@
-import os
 import json
+import os
 
 from dotenv import load_dotenv
 from web3 import Web3
@@ -8,8 +8,8 @@ load_dotenv()
 
 
 def _make_leaf(message: str) -> bytes:
-    first = Web3.solidity_keccak(['bytes'], [message.encode('utf-8')])
-    second = Web3.solidity_keccak(['bytes32'], [first])
+    first = Web3.solidity_keccak(["bytes"], [message.encode("utf-8")])
+    second = Web3.solidity_keccak(["bytes32"], [first])
     # Double-hash so leaves and internal nodes are produced by structurally
     # different operations, preventing an attacker from substituting an
     # internal node as a valid leaf (second-preimage resistance).
@@ -20,7 +20,7 @@ def _hash_pair(a: bytes, b: bytes) -> bytes:
     left, right = (a, b) if a <= b else (b, a)
     # Sort before hashing (sortPairs convention): the verifier never needs to
     # know which side a sibling sits on — it always sorts before hashing.
-    return Web3.solidity_keccak(['bytes32', 'bytes32'], [left, right])
+    return Web3.solidity_keccak(["bytes32", "bytes32"], [left, right])
 
 
 def _build_tree(leaves: list[bytes]) -> list[list[bytes]]:
@@ -50,7 +50,9 @@ def _submit_batch(messages: list[str]) -> dict:
     if not messages:
         raise ValueError("Cannot submit empty batch")
     if len(messages) > MAX_LEAVES:
-        raise ValueError(f"Batch exceeds MAX_LEAVES limit ({len(messages)} > {MAX_LEAVES})")
+        raise ValueError(
+            f"Batch exceeds MAX_LEAVES limit ({len(messages)} > {MAX_LEAVES})"
+        )
 
     rpc_url = os.getenv("SEPOLIA_RPC_URL")
     contract_address = os.getenv("CONTRACT_ADDRESS")
@@ -80,11 +82,13 @@ def _submit_batch(messages: list[str]) -> dict:
     root = _get_root(tree)
     sorted_leaves = tree[0]
 
-    tx = contract.functions.recordBatch(root, sorted_leaves).build_transaction({
-        "from": account.address,
-        "nonce": w3.eth.get_transaction_count(account.address),
-        "gasPrice": w3.eth.gas_price,
-    })
+    tx = contract.functions.recordBatch(root, sorted_leaves).build_transaction(
+        {
+            "from": account.address,
+            "nonce": w3.eth.get_transaction_count(account.address),
+            "gasPrice": w3.eth.gas_price,
+        }
+    )
 
     signed = w3.eth.account.sign_transaction(tx, private_key=private_key)
     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
@@ -113,5 +117,5 @@ def push(messages: list[str]) -> list[dict]:
 
     results = []
     for i in range(0, len(messages), MAX_LEAVES):
-        results.append(_submit_batch(messages[i:i + MAX_LEAVES]))
+        results.append(_submit_batch(messages[i : i + MAX_LEAVES]))
     return results

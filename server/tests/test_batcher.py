@@ -1,8 +1,11 @@
-import sys
 import os
+import sys
 
+import pytest
 from unittest.mock import patch
 
+from unittest.mock import patch
+ 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -22,7 +25,8 @@ class TestMakeLeaf:
 
     def test_double_hash_differs_from_single(self):
         from web3 import Web3
-        single = Web3.solidity_keccak(['bytes'], ["hello".encode('utf-8')])
+        
+        single = Web3.solidity_keccak(["bytes"], ["hello".encode("utf-8")])
         assert _make_leaf("hello") != single
 
     def test_empty_string(self):
@@ -77,6 +81,7 @@ class TestBuildTree:
 
     def test_leaf_layer_is_globally_sorted(self):
         import random
+
         leaves = [_make_leaf(str(i)) for i in range(6)]
         random.shuffle(leaves)
         tree = _build_tree(leaves)
