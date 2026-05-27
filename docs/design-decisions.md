@@ -19,7 +19,7 @@ _Agreed at bi-weekly check-in, Tuesday 19th May 2026._
 ### Branch Naming
 
 ```
-/<name>/<conventional-commit-type>/<short-description>
+<name>/<conventional-commit-type>/<short-description>
 ```
 
 e.g. `skye/feat/websocket-handler`, `james/fix/argon2-params`

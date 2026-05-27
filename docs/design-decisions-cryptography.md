@@ -104,7 +104,7 @@ Parameters must be tuned to the server hardware during integration testing. The 
 HKDF is used to derive multiple keys from a shared secret (e.g. the PQXDH output). Separate `info` strings achieve domain separation so that keys derived for different purposes (encryption key, MAC key, etc.) are cryptographically independent.
 
 **SHA3-256 vs SHA-256:**
-SHA3-256 (Keccak) is used instead of SHA-256 for quantum resistance in the KDF context. Both are currently considered secure, but SHA3-256 provides an additional margin.
+SHA3-256 is used instead of SHA-256 for quantum resistance in the KDF context. Both are currently considered secure, but SHA3-256 provides an additional margin.
 
 **NIST SP 800-132 guidance:**
 Per NIST SP 800-132, the master key (MK) derived from the user's password is treated as a Key Encryption Key (KEK). A fresh random Data Protection Key (DPK) is generated to protect the actual data, and the MK wraps the DPK. This separates the password-derived key from the data encryption key, so that re-keying data does not require the user's password.
