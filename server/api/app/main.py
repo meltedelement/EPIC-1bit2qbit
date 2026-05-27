@@ -8,6 +8,5 @@ app = FastAPI(title="EPIC 1bit2qbit API", version="0.1.0")
 app.include_router(auth.router)
 
 
-@app.on_event("startup")
-def _create_tables() -> None:
+if os.getenv("ENV") == "development":
     Base.metadata.create_all(bind=engine)
