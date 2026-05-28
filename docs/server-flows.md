@@ -31,7 +31,7 @@ flowchart TD
     classDef ok        fill:#2E7D32,stroke:#1B5E20,color:#fff
     classDef store     fill:#6A1B9A,stroke:#4A148C,color:#fff
 
-    A([Client opens WSS connection]):::terminal --> B["First message: auth frame\n{username, auth_key, salt}"]:::process
+    A([Client opens WSS connection]):::terminal --> B["First message: auth frame\n{username, password}"]:::process
     B --> C["Verify credentials"]:::process
     C -- invalid --> D([Return auth error · close connection]):::error
     C -- valid --> E["Register connection as session\nmark user online"]:::process
