@@ -8,6 +8,9 @@ from doubleratchet.recommended import (
     kdf_hkdf,
     kdf_separate_hmacs,
 )
+import os
+import struct
+import threading
 
 
 class DoubleRatchet(DR):
@@ -56,26 +59,33 @@ class AES256GCMAEAD:
     """
     AES-256-GCM authenticated encryption.
 
-    Uses a fixed zero nonce since Double Ratchet guarantees a unique key per message,
-    ensuring the (key, nonce) pair is always unique.
+    Nonce format:
+        4-byte random prefix || 8-byte counter (NIST recommendation)
     """
 
     NONCE_SIZE = 12
     KEY_SIZE = 32
-    NONCE = b"\x00" * NONCE_SIZE
+
+    _PREFIX = os.urandom(4)
+    _COUNTER = 0
+    _LOCK = threading.Lock()
+
+    @classmethod
+    def _next_nonce(cls) -> bytes:
+        with cls._LOCK:
+            nonce = cls._PREFIX + struct.pack(">Q", cls._COUNTER)
+            cls._COUNTER += 1
+        return nonce
 
     @staticmethod
     async def encrypt(plaintext: bytes, key: bytes, associated_data: bytes) -> bytes:
-        """Encrypt plaintext. Returns ciphertext with 16-byte authentication tag."""
-        cipher = AESGCM(key)
-        return cipher.encrypt(AES256GCMAEAD.NONCE, plaintext, associated_data)
+        nonce = AES256GCMAEAD._next_nonce()
+        return nonce + AESGCM(key).encrypt(nonce, plaintext, associated_data)
 
     @staticmethod
     async def decrypt(ciphertext: bytes, key: bytes, associated_data: bytes) -> bytes:
-        """Decrypt ciphertext. Raises InvalidTag if authentication fails."""
-        cipher = AESGCM(key)
-        return cipher.decrypt(AES256GCMAEAD.NONCE, ciphertext, associated_data)
-    
+        nonce = ciphertext[:AES256GCMAEAD.NONCE_SIZE]
+        return AESGCM(key).decrypt(nonce, ciphertext[AES256GCMAEAD.NONCE_SIZE:], associated_data)
     
 
 # Configuration dictionary for DoubleRatchet initialization.                                                                                                  
