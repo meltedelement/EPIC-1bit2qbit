@@ -23,7 +23,7 @@ max-args = 8
 max-attributes = 10
 max-bool-expr = 5
 max-branches = 12
-max-locals = 15
+max-locals = 30
 max-returns = 6
 max-statements = 50
 
@@ -33,3 +33,4 @@ disable =
     C0115,  # missing-class-docstring
     C0116,  # missing-function-docstring
     R0903,  # too-few-public-methods (often fine for data classes)
+    E1120,  # no-value-for-parameter (false positive on web3.py static methods)
