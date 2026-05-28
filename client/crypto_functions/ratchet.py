@@ -18,7 +18,8 @@ class DoubleRatchet(DR):
     @staticmethod
     def _build_associated_data(associated_data: bytes, header: Header) -> bytes:
         return (
-            associated_data
+            len(associated_data).to_bytes(8, "big")
+            + associated_data
             + header.ratchet_pub
             + header.sending_chain_length.to_bytes(8, "big")
             + header.previous_sending_chain_length.to_bytes(8, "big")
