@@ -87,6 +87,9 @@ class AES256GCMAEAD:
 
     @staticmethod
     async def decrypt(ciphertext: bytes, key: bytes, associated_data: bytes) -> bytes:
+        if len(ciphertext) < AES256GCMAEAD.NONCE_SIZE + 16:
+            raise ValueError("Ciphertext too short (missing nonce or GCM tag)")
+
         nonce = ciphertext[: AES256GCMAEAD.NONCE_SIZE]
         return AESGCM(key).decrypt(nonce, ciphertext[AES256GCMAEAD.NONCE_SIZE :], associated_data)
 
