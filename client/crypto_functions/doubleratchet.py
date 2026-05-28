@@ -1,6 +1,4 @@
 import os
-import struct
-import threading
 from typing import Any, Dict
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
