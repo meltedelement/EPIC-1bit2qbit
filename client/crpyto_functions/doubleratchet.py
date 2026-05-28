@@ -3,13 +3,12 @@ import struct
 import threading
 from typing import Any, Dict
 
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from doubleratchet import DoubleRatchet as DR
 from doubleratchet import Header
 from doubleratchet.recommended import HashFunction
 from doubleratchet.recommended import diffie_hellman_ratchet_curve25519 as dhr25519
 from doubleratchet.recommended import kdf_hkdf, kdf_separate_hmacs
-
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 class DoubleRatchet(DR):
