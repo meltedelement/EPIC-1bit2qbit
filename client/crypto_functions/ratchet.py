@@ -7,6 +7,9 @@ from doubleratchet.recommended import HashFunction
 from doubleratchet.recommended import diffie_hellman_ratchet_curve25519 as dhr25519
 from doubleratchet.recommended import kdf_hkdf, kdf_separate_hmacs
 
+from client.crypto_functions.ratchet import DoubleRatchet as DR
+from client.crypto_functions.ratchet import Header
+
 
 class DoubleRatchet(DR):
     """
