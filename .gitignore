@@ -20,8 +20,16 @@ server/web-app/build/
 
 # Python
 __pycache__/
+*.py[cod]
 *.pyc
 *.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
 .venv/
 venv/
 *.egg-info/
@@ -33,3 +41,6 @@ Thumbs.db
 # vs settings
 .claude
 .vscode
+# Claude
+CLAUDE.md
+claude-logs/

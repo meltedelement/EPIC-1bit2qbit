@@ -22,8 +22,8 @@ dev = [
 ]
 
 [project.scripts]
-epic-api        = "server.run:main"
-epic-api-initdb = "server.run:init_db"
+epic-api        = "backend.main:main"
+epic-api-initdb = "backend.main:init_db"
 
 [tool.pytest.ini_options]
 pythonpath = [".", "blockchain"]
@@ -34,4 +34,4 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["api*"]
+include = ["backend*"]
