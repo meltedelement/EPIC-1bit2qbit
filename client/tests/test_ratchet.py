@@ -3,9 +3,8 @@ import os
 from dataclasses import dataclass
 
 import pytest
-from cryptography.exceptions import InvalidTag
-
 from crypto_functions.ratchet import AES256GCMAEAD, DoubleRatchet
+from cryptography.exceptions import InvalidTag
 
 _PLAINTEXT = b"hello world"
 _AAD = b"associated data"
@@ -101,7 +100,9 @@ class TestAES256GCMAEADKeyValidation:
 class TestBuildAssociatedData:
     def test_deterministic(self):
         h = _header()
-        assert DoubleRatchet._build_associated_data(_AAD, h) == DoubleRatchet._build_associated_data(_AAD, h)
+        assert DoubleRatchet._build_associated_data(
+            _AAD, h
+        ) == DoubleRatchet._build_associated_data(_AAD, h)
 
     def test_length_prefix_is_first_eight_bytes(self):
         ad = b"test"
@@ -110,7 +111,9 @@ class TestBuildAssociatedData:
 
     def test_different_ad_gives_different_output(self):
         h = _header()
-        assert DoubleRatchet._build_associated_data(b"aaa", h) != DoubleRatchet._build_associated_data(b"bbb", h)
+        assert DoubleRatchet._build_associated_data(
+            b"aaa", h
+        ) != DoubleRatchet._build_associated_data(b"bbb", h)
 
     def test_length_prefix_prevents_aad_collision(self):
         # b"A" + pub starting b"B..." must differ from b"AB" + pub starting b"\x00..."
@@ -120,19 +123,16 @@ class TestBuildAssociatedData:
         assert r1 != r2
 
     def test_changed_ratchet_pub_gives_different_output(self):
-        assert (
-            DoubleRatchet._build_associated_data(_AAD, _header(pub=b"\x01" * 32))
-            != DoubleRatchet._build_associated_data(_AAD, _header(pub=b"\x02" * 32))
-        )
+        assert DoubleRatchet._build_associated_data(
+            _AAD, _header(pub=b"\x01" * 32)
+        ) != DoubleRatchet._build_associated_data(_AAD, _header(pub=b"\x02" * 32))
 
     def test_changed_sending_chain_length_gives_different_output(self):
-        assert (
-            DoubleRatchet._build_associated_data(_AAD, _header(scl=0))
-            != DoubleRatchet._build_associated_data(_AAD, _header(scl=1))
-        )
+        assert DoubleRatchet._build_associated_data(
+            _AAD, _header(scl=0)
+        ) != DoubleRatchet._build_associated_data(_AAD, _header(scl=1))
 
     def test_changed_previous_sending_chain_length_gives_different_output(self):
-        assert (
-            DoubleRatchet._build_associated_data(_AAD, _header(pscl=0))
-            != DoubleRatchet._build_associated_data(_AAD, _header(pscl=1))
-        )
+        assert DoubleRatchet._build_associated_data(
+            _AAD, _header(pscl=0)
+        ) != DoubleRatchet._build_associated_data(_AAD, _header(pscl=1))
