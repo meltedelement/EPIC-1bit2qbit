@@ -29,3 +29,7 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# vs settings
+.claude
+.vscode
