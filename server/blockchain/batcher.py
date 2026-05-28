@@ -3,6 +3,7 @@ import os
 
 from dotenv import load_dotenv
 from web3 import Web3
+from web3._utils.events import EventLogErrorFlags
 
 load_dotenv()
 
@@ -99,7 +100,7 @@ def _submit_batch(messages: list[str]) -> dict:
     if receipt.status != 1:
         raise ValueError(f"Transaction {tx_hash.hex()} reverted on-chain")
 
-    events = contract.events.BatchRecorded().process_receipt(receipt)
+    events = contract.events.BatchRecorded().process_receipt(receipt, errors=EventLogErrorFlags.Discard)
     if not events:
         raise ValueError(f"BatchRecorded event not found in transaction {tx_hash.hex()}")
 
