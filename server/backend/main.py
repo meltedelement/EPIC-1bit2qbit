@@ -21,7 +21,9 @@ def main() -> None:
     key = os.environ.get("TLS_KEY_FILE")
 
     if bool(cert) != bool(key):
-        raise SystemExit("TLS_CERT_FILE and TLS_KEY_FILE must both be set or both be unset")
+        raise SystemExit(
+            "TLS_CERT_FILE and TLS_KEY_FILE must both be set or both be unset"
+        )
 
     uvicorn.run(
         "backend.main:app",
