@@ -10,7 +10,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.toml"
+_CONFIG_PATH = Path.cwd() / "config.toml"
 
 
 class DbConfig(BaseModel):
