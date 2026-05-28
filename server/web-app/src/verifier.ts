@@ -3,6 +3,13 @@ import ABI from './abi.json';
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS as string;
 const SEPOLIA_RPC_URL = import.meta.env.VITE_SEPOLIA_RPC_URL as string;
+
+const missingVars = ['VITE_CONTRACT_ADDRESS', 'VITE_SEPOLIA_RPC_URL'].filter(
+  key => !import.meta.env[key]
+);
+if (missingVars.length > 0) {
+  throw new Error(`Missing required environment variable(s): ${missingVars.join(', ')}`);
+}
 const DEPLOY_BLOCK = 10_939_625;
 
 export interface VerificationResult {
@@ -52,9 +59,7 @@ function getProof(tree: string[][], leaf: string): string[] {
   for (let i = 0; i < tree.length - 1; i++) {
     const layer = tree[i];
     const siblingIndex = index % 2 === 0 ? index + 1 : index - 1;
-    if (siblingIndex < layer.length) {
-      proof.push(layer[siblingIndex]);
-    }
+    proof.push(siblingIndex < layer.length ? layer[siblingIndex] : layer[index]);
     index = Math.floor(index / 2);
   }
 
