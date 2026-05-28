@@ -18,6 +18,9 @@ server/web-app/.env
 server/web-app/dist/
 server/web-app/build/
 
+# client
+client/build/
+
 # Python
 __pycache__/
 *.py[cod]
