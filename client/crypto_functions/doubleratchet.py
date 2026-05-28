@@ -86,10 +86,11 @@ class AES256GCMAEAD:
 
         AES256GCMAEAD._check_key(key)
 
-        nonce = ciphertext[:AES256GCMAEAD.NONCE_SIZE]
-        ct = ciphertext[AES256GCMAEAD.NONCE_SIZE:]
+        nonce = ciphertext[: AES256GCMAEAD.NONCE_SIZE]
+        ct = ciphertext[AES256GCMAEAD.NONCE_SIZE :]
 
         return AESGCM(key).decrypt(nonce, ct, associated_data)
+
 
 # Configuration dictionary for DoubleRatchet initialization.
 # Pass to encrypt_initial_message, decrypt_initial_message, and from_json using **dr_configuration
