@@ -24,7 +24,7 @@ flowchart LR
     end
 
     subgraph ISE["ISE Server"]
-        API["API — Register + Login"]:::entry
+        API["API — Register"]:::entry
         WS["WebSockets Router / Dispatcher"]:::transport
         SESSION["Session Manager"]:::messaging
         MQ["Message Queue"]:::messaging
@@ -87,7 +87,7 @@ flowchart TB
     classDef infra      fill:#546E7A,stroke:#37474F,color:#fff
     classDef storage    fill:#6A1B9A,stroke:#4A148C,color:#fff
 
-    API["API — Register + Login"]:::entry
+    API["API — Register"]:::entry
     WS["WebSockets Router / Dispatcher"]:::transport
     AUTHN["Authentication Handler"]:::security
     SESSION["Session Manager"]:::messaging
@@ -100,6 +100,7 @@ flowchart TB
 
     API --> AUTHN
     API --> LOG
+    WS --> AUTHN
     WS --> LOG
     AUTHN --> SESSION
     WS --> SESSION
