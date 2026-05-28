@@ -14,9 +14,7 @@ This document will be the basis for creation of our Cryptographic Design Documen
 
 **Nonce strategy:**
 
-- 96-bit sequential nonce per key, starting from a random base
-- Rekey after 2³² messages (aggregate per key) to stay within the GCM collision bound
-- Cap each individual encryption at 64 GB of plaintext
+- 96-bit pseudorandom nonce per key, permissable by NIST, and we are never hitting the 2^32 birthday bound limit.
 
 **Key length — why 256-bit:**
 AES-256 provides a 128-bit security level against quantum adversaries under Grover's algorithm (halves the brute-force cost), compared to AES-128's 64-bit post-quantum security. As this system may handle messages with long-term confidentiality requirements, 256-bit keys are appropriate.
