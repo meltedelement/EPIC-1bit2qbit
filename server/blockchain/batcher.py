@@ -100,7 +100,9 @@ def _submit_batch(messages: list[str]) -> dict:
     if receipt.status != 1:
         raise ValueError(f"Transaction {tx_hash.hex()} reverted on-chain")
 
-    events = contract.events.BatchRecorded().process_receipt(receipt, errors=EventLogErrorFlags.Discard)
+    events = contract.events.BatchRecorded().process_receipt(
+        receipt, errors=EventLogErrorFlags.Discard
+    )
     if not events:
         raise ValueError(f"BatchRecorded event not found in transaction {tx_hash.hex()}")
 
