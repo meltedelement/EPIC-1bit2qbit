@@ -10,9 +10,7 @@ from ..database.schemas import RegisterRequest, RegisterResponse
 router = APIRouter(tags=["auth"])
 
 
-@router.post(
-    "/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED
-)
+@router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 def register(req: RegisterRequest, db: Session = Depends(get_db)) -> RegisterResponse:
     hashed = hash_password(
         req.auth_key
