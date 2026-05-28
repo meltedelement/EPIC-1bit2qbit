@@ -7,6 +7,8 @@ from web3._utils.events import EventLogErrorFlags
 
 load_dotenv()
 
+MAX_LEAVES = 4_000
+
 
 def _make_leaf(message: str) -> bytes:
     first = Web3.solidity_keccak(["bytes"], [message.encode("utf-8")])
@@ -42,9 +44,6 @@ def _build_tree(leaves: list[bytes]) -> list[list[bytes]]:
 
 def _get_root(tree: list[list[bytes]]) -> bytes:
     return tree[-1][0]
-
-
-MAX_LEAVES = 4_000
 
 
 def _submit_batch(messages: list[str]) -> dict:
