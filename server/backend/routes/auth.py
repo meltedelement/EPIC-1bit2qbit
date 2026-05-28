@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..database.db import get_db
 from ..database.models import User
 from ..database.schemas import RegisterRequest, RegisterResponse
-from ..security.passwords import hash_password
+from whereWeHashPasswords import hash_password
 
 router = APIRouter(tags=["auth"])
 
