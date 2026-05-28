@@ -31,11 +31,11 @@ contract MessageIntegrity {
         uint256 timestamp;
     }
 
-    /// @notice Hard cap on leaves per batch, derived from the EIP-7825 per-transaction gas
-    ///         ceiling of 2^24 gas. At ~2 000 gas per leaf (EIP-7623 calldata floor + event
-    ///         emission) and ~70,000 gas fixed overhead,the theoretical max is ~8,192 leaves:
-    ///         8,000 is set as the contract limit to provide headroom for estimation variance.
-    uint256 public constant MAX_LEAVES = 8_000;
+    /// @notice Hard cap on leaves per batch, derived from the per-transaction data size limit
+    ///         of 131,072 bytes. With 212 bytes overhead data, and 32 bytes per leaf event,
+    ///         the confirmed maximum number of leaves is 4,089
+    ///         4,000 is set as the contract limit to give headroom for estimation variance.
+    uint256 public constant MAX_LEAVES = 4_000;
 
     /// @notice Append-only array of all recorded batches.
     /// @dev The array index is permanent and used as the join key for LeafRecorded events.
