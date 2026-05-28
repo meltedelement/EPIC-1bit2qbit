@@ -57,8 +57,8 @@ export default function VerifyPage() {
 
           {result.timestamp && <div className="result-row"><span>Timestamp</span><span>{result.timestamp.toUTCString()}</span></div>}
           {result.batchIndex !== undefined && <div className="result-row"><span>Batch index</span><span>{result.batchIndex}</span></div>}
-          {result.txHash && <div className="result-row"><span>Transaction</span><a href={`https://sepolia.etherscan.io/tx/${result.txHash}`} target="_blank" rel="noreferrer">{result.txHash.slice(0, 10)}...{result.txHash.slice(-8)}</a></div>}
-          {result.merkleRoot && <div className="result-row"><span>Merkle root</span><span title={result.merkleRoot}>{result.merkleRoot.slice(0, 10)}...{result.merkleRoot.slice(-8)}</span></div>}
+          {result.txHash && <div className="result-row"><span>Transaction</span><a href={`https://sepolia.etherscan.io/tx/${result.txHash}`} target="_blank" rel="noreferrer">{result.txHash}</a></div>}
+          {result.merkleRoot && <div className="result-row"><span>Merkle root</span><span>{result.merkleRoot}</span></div>}
           {result.leafHash && <div className="result-row"><span>Leaf hash</span><span>{result.leafHash}</span></div>}
         </section>
       )}
