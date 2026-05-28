@@ -15,3 +15,16 @@ host          = "0.0.0.0"
 [services.backend.db]
 url = "mysql+pymysql://epic@/epic?unix_socket=/var/run/mysqld/mysqld.sock"
 
+[logging.stdout]
+enabled     = true
+level       = "DEBUG"
+format      = "%(log_color)s%(levelname)-8s%(reset)s %(name)s — %(message)s"
+date_format = "%H:%M:%S"
+
+[logging.file]
+enabled        = true
+level          = "DEBUG"
+directory      = "logs"
+retention_days = 7
+format         = "%(asctime)s %(levelname)-8s %(name)s — %(message)s"
+date_format    = "%Y-%m-%d %H:%M:%S"
