@@ -79,10 +79,10 @@ class AES256GCMAEAD:
         with cls._LOCK:
             nonce = cls._PREFIX + struct.pack(">Q", cls._COUNTER)
             if cls._COUNTER == cls._COUNTER_MAX:
-                 cls._PREFIX = os.urandom(4)
-                 cls._COUNTER = 0
+                cls._PREFIX = os.urandom(4)
+                cls._COUNTER = 0
             else:
-                 cls._COUNTER += 1
+                cls._COUNTER += 1
         return nonce
 
     @staticmethod
@@ -99,10 +99,10 @@ class AES256GCMAEAD:
         AES256GCMAEAD._check_key(key)
         nonce = ciphertext[: AES256GCMAEAD.NONCE_SIZE]
         return AESGCM(key).decrypt(
-             nonce,
-             ciphertext[AES256GCMAEAD.NONCE_SIZE :],
-             associated_data,
-         )
+            nonce,
+            ciphertext[AES256GCMAEAD.NONCE_SIZE :],
+            associated_data,
+        )
 
 
 # Configuration dictionary for DoubleRatchet initialization.
