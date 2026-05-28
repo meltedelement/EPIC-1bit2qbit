@@ -68,6 +68,11 @@ class AES256GCMAEAD:
     _COUNTER = 0
     _LOCK = threading.Lock()
 
+    @staticmethod
+    def _check_key(key: bytes) -> None:
+        if len(key) != AES256GCMAEAD.KEY_SIZE:
+            raise ValueError("Invalid key length (expected 32 bytes for AES-256)")
+
     @classmethod
     def _next_nonce(cls) -> bytes:
         with cls._LOCK:
