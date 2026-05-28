@@ -57,53 +57,39 @@ class AES256GCMAEAD:
     """
     AES-256-GCM authenticated encryption.
 
-    Nonce format:
-        4-byte random prefix || 8-byte counter (NIST recommendation)
+    Nonce:
+        12-byte random nonce, NIST minimum of random bits.
     """
 
     NONCE_SIZE = 12
     KEY_SIZE = 32
-
-    _PREFIX = os.urandom(4)
-    _COUNTER = 0
-    _COUNTER_MAX = (1 << 64) - 1
-    _LOCK = threading.Lock()
+    TAG_SIZE = 16
 
     @staticmethod
     def _check_key(key: bytes) -> None:
         if len(key) != AES256GCMAEAD.KEY_SIZE:
             raise ValueError("Invalid key length (expected 32 bytes for AES-256)")
 
-    @classmethod
-    def _next_nonce(cls) -> bytes:
-        with cls._LOCK:
-            nonce = cls._PREFIX + struct.pack(">Q", cls._COUNTER)
-            if cls._COUNTER == cls._COUNTER_MAX:
-                 cls._PREFIX = os.urandom(4)
-                 cls._COUNTER = 0
-            else:
-                 cls._COUNTER += 1
-        return nonce
-
     @staticmethod
     async def encrypt(plaintext: bytes, key: bytes, associated_data: bytes) -> bytes:
         AES256GCMAEAD._check_key(key)
-        nonce = AES256GCMAEAD._next_nonce()
-        return nonce + AESGCM(key).encrypt(nonce, plaintext, associated_data)
+
+        nonce = os.urandom(AES256GCMAEAD.NONCE_SIZE)
+        ciphertext = AESGCM(key).encrypt(nonce, plaintext, associated_data)
+
+        return nonce + ciphertext
 
     @staticmethod
     async def decrypt(ciphertext: bytes, key: bytes, associated_data: bytes) -> bytes:
-        if len(ciphertext) < AES256GCMAEAD.NONCE_SIZE + 16:
+        if len(ciphertext) < AES256GCMAEAD.NONCE_SIZE + AES256GCMAEAD.TAG_SIZE:
             raise ValueError("Ciphertext too short (missing nonce or GCM tag)")
 
         AES256GCMAEAD._check_key(key)
-        nonce = ciphertext[: AES256GCMAEAD.NONCE_SIZE]
-        return AESGCM(key).decrypt(
-             nonce,
-             ciphertext[AES256GCMAEAD.NONCE_SIZE :],
-             associated_data,
-         )
 
+        nonce = ciphertext[:AES256GCMAEAD.NONCE_SIZE]
+        ct = ciphertext[AES256GCMAEAD.NONCE_SIZE:]
+
+        return AESGCM(key).decrypt(nonce, ct, associated_data)
 
 # Configuration dictionary for DoubleRatchet initialization.
 # Pass to encrypt_initial_message, decrypt_initial_message, and from_json using **dr_configuration
