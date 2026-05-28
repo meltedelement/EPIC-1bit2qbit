@@ -1,16 +1,16 @@
-from typing import Any, Dict
-
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from doubleratchet import DoubleRatchet as DR, Header
-from doubleratchet.recommended import (
-    diffie_hellman_ratchet_curve25519 as dhr25519,
-    HashFunction,
-    kdf_hkdf,
-    kdf_separate_hmacs,
-)
 import os
 import struct
 import threading
+from typing import Any, Dict
+
+from doubleratchet import DoubleRatchet as DR
+from doubleratchet import Header
+from doubleratchet.recommended import HashFunction
+from doubleratchet.recommended import \
+    diffie_hellman_ratchet_curve25519 as dhr25519
+from doubleratchet.recommended import kdf_hkdf, kdf_separate_hmacs
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 class DoubleRatchet(DR):
@@ -84,12 +84,14 @@ class AES256GCMAEAD:
 
     @staticmethod
     async def decrypt(ciphertext: bytes, key: bytes, associated_data: bytes) -> bytes:
-        nonce = ciphertext[:AES256GCMAEAD.NONCE_SIZE]
-        return AESGCM(key).decrypt(nonce, ciphertext[AES256GCMAEAD.NONCE_SIZE:], associated_data)
-    
+        nonce = ciphertext[: AES256GCMAEAD.NONCE_SIZE]
+        return AESGCM(key).decrypt(
+            nonce, ciphertext[AES256GCMAEAD.NONCE_SIZE :], associated_data
+        )
 
-# Configuration dictionary for DoubleRatchet initialization.                                                                                                  
-# Pass to encrypt_initial_message, decrypt_initial_message, and from_json using **dr_configuration  
+
+# Configuration dictionary for DoubleRatchet initialization.
+# Pass to encrypt_initial_message, decrypt_initial_message, and from_json using **dr_configuration
 dr_configuration: Dict[str, Any] = {
     "diffie_hellman_ratchet_class": DiffieHellmanRatchet,
     "root_chain_kdf": RootChainKDF,
