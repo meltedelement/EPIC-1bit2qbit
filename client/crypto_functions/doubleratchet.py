@@ -87,6 +87,7 @@ class AES256GCMAEAD:
 
     @staticmethod
     async def encrypt(plaintext: bytes, key: bytes, associated_data: bytes) -> bytes:
+        AES256GCMAEAD._check_key(key)
         nonce = AES256GCMAEAD._next_nonce()
         return nonce + AESGCM(key).encrypt(nonce, plaintext, associated_data)
 
@@ -95,8 +96,13 @@ class AES256GCMAEAD:
         if len(ciphertext) < AES256GCMAEAD.NONCE_SIZE + 16:
             raise ValueError("Ciphertext too short (missing nonce or GCM tag)")
 
+        AES256GCMAEAD._check_key(key)
         nonce = ciphertext[: AES256GCMAEAD.NONCE_SIZE]
-        return AESGCM(key).decrypt(nonce, ciphertext[AES256GCMAEAD.NONCE_SIZE :], associated_data)
+        return AESGCM(key).decrypt(
+             nonce,
+             ciphertext[AES256GCMAEAD.NONCE_SIZE :],
+             associated_data,
+         )
 
 
 # Configuration dictionary for DoubleRatchet initialization.
