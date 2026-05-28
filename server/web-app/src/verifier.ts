@@ -119,6 +119,6 @@ export async function verifyMessage(message: string): Promise<VerificationResult
       txHash,
     };
   } catch (err) {
-    return { isValid: false, reason: `Verification failed: ${err instanceof Error ? err.message : String(err)}` };
+    return { isValid: false, reason: `Verification failed: - please try again later` };
   }
 }
