@@ -66,6 +66,7 @@ class AES256GCMAEAD:
 
     _PREFIX = os.urandom(4)
     _COUNTER = 0
+    _COUNTER_MAX = (1 << 64) - 1
     _LOCK = threading.Lock()
 
     @staticmethod
@@ -77,7 +78,11 @@ class AES256GCMAEAD:
     def _next_nonce(cls) -> bytes:
         with cls._LOCK:
             nonce = cls._PREFIX + struct.pack(">Q", cls._COUNTER)
-            cls._COUNTER += 1
+            if cls._COUNTER == cls._COUNTER_MAX:
+                 cls._PREFIX = os.urandom(4)
+                 cls._COUNTER = 0
+            else:
+                 cls._COUNTER += 1
         return nonce
 
     @staticmethod
