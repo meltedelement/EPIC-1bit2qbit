@@ -98,7 +98,7 @@ class TestAES256GCMAEADKeyValidation:
             asyncio.run(AES256GCMAEAD.decrypt(b"\x00" * 5, key, _AAD))
 
 
-class TestBuildAssociatedData:
+class TestBuildAssociatedData:  # pylint: disable=protected-access
     def test_deterministic(self):
         h = _header()
         assert DoubleRatchet._build_associated_data(_AAD, h) == DoubleRatchet._build_associated_data(_AAD, h)
