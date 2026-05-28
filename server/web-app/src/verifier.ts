@@ -56,6 +56,10 @@ function getProof(tree: string[][], leaf: string): string[] {
   const proof: string[] = [];
   let index = tree[0].indexOf(leaf);
 
+  if (index === -1) {
+    throw new Error(`Leaf not found in tree: ${leaf}`);
+  }
+
   for (let i = 0; i < tree.length - 1; i++) {
     const layer = tree[i];
     const siblingIndex = index % 2 === 0 ? index + 1 : index - 1;
@@ -123,7 +127,7 @@ export async function verifyMessage(message: string): Promise<VerificationResult
       timestamp: new Date(Number(timestamp) * 1000),
       txHash,
     };
-  } catch (err) {
-    return { isValid: false, reason: `Verification failed: - please try again later` };
+  } catch {
+    return { isValid: false, reason: `Verification failed: Please try again later` };
   }
 }
