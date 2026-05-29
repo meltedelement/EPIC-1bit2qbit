@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ws"])
 
 _ph = PasswordHasher()
+# Pre-hashed dummy used to equalise timing when the username does not exist,
+# preventing username enumeration via response-time differences.
+_DUMMY_HASH = _ph.hash("dummy")
 _MAX_MESSAGE_LEN = 4096
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -35,10 +38,11 @@ async def _authenticate(websocket: WebSocket) -> str | None:
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.username == frame.username).first()
+        target_hash = user.password_hash if user is not None else _DUMMY_HASH
+        _ph.verify(target_hash, frame.password)
         if user is None:
             await websocket.close(code=4001, reason="authentication failed")
             return None
-        _ph.verify(user.password_hash, frame.password)
     except (VerifyMismatchError, VerificationError, InvalidHashError):
         await websocket.close(code=4001, reason="authentication failed")
         return None
