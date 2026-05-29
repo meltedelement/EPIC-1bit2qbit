@@ -9,7 +9,7 @@ from .config.config import config
 from .database.db import Base, engine
 from .routes import auth
 
-setup_logging(config.model_dump(), script_path=__file__)
+setup_logging(config.model_dump())
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="1bit2qbit", version="0.1.0")
