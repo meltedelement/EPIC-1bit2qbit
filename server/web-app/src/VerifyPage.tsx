@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { verifyMessage } from './verifier';
 import type { VerificationResult } from './verifier';
 
@@ -6,6 +6,7 @@ export default function VerifyPage() {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<VerificationResult | null>(null);
+  const lastVerifiedMessage = useRef<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -16,7 +17,9 @@ export default function VerifyPage() {
   async function handleVerify() {
     setLoading(true);
     setResult(null);
-    const outcome = await verifyMessage(message.trim());
+    const trimmed = message.trim();
+    const outcome = await verifyMessage(trimmed);
+    lastVerifiedMessage.current = trimmed;
     setResult(outcome);
     setLoading(false);
   }
@@ -35,12 +38,12 @@ export default function VerifyPage() {
           rows={6}
           placeholder="Paste message content here..."
           value={message}
-          onChange={e => setMessage(e.target.value)}
+          onChange={e => { setMessage(e.target.value); lastVerifiedMessage.current = null; }}
         />
         <button
           className="verify-button"
           onClick={handleVerify}
-          disabled={!message.trim() || loading}
+          disabled={!message.trim() || loading || message.trim() === lastVerifiedMessage.current}
         >
           {loading ? 'Verifying...' : 'Verify'}
         </button>
