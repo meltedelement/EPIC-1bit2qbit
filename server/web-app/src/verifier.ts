@@ -1,7 +1,6 @@
 import { ethers } from 'ethers';
 import ABI from './abi.json';
 
-const DEPLOY_BLOCK = 10_939_625;
 
 export interface VerificationResult {
   isValid: boolean;
@@ -73,10 +72,12 @@ export async function verifyMessage(message: string): Promise<VerificationResult
   try {
     const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS as string;
     const SEPOLIA_RPC_URL = import.meta.env.VITE_SEPOLIA_RPC_URL as string;
+    const DEPLOY_BLOCK = Number(import.meta.env.VITE_DEPLOY_BLOCK);
 
     const missingVars = [
       !CONTRACT_ADDRESS && 'VITE_CONTRACT_ADDRESS',
       !SEPOLIA_RPC_URL && 'VITE_SEPOLIA_RPC_URL',
+      !DEPLOY_BLOCK && 'VITE_DEPLOY_BLOCK',
     ].filter(Boolean);
     if (missingVars.length > 0) {
       throw new Error(`Missing required environment variable(s): ${missingVars.join(', ')}`);
