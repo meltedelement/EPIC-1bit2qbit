@@ -1,15 +1,6 @@
 import { ethers } from 'ethers';
 import ABI from './abi.json';
 
-const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS as string;
-const SEPOLIA_RPC_URL = import.meta.env.VITE_SEPOLIA_RPC_URL as string;
-
-const missingVars = ['VITE_CONTRACT_ADDRESS', 'VITE_SEPOLIA_RPC_URL'].filter(
-  key => !import.meta.env[key]
-);
-if (missingVars.length > 0) {
-  throw new Error(`Missing required environment variable(s): ${missingVars.join(', ')}`);
-}
 const DEPLOY_BLOCK = 10_939_625;
 
 export interface VerificationResult {
@@ -80,6 +71,17 @@ function verifyProof(proof: string[], leaf: string, root: string): boolean {
 
 export async function verifyMessage(message: string): Promise<VerificationResult> {
   try {
+    const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS as string;
+    const SEPOLIA_RPC_URL = import.meta.env.VITE_SEPOLIA_RPC_URL as string;
+
+    const missingVars = [
+      !CONTRACT_ADDRESS && 'VITE_CONTRACT_ADDRESS',
+      !SEPOLIA_RPC_URL && 'VITE_SEPOLIA_RPC_URL',
+    ].filter(Boolean);
+    if (missingVars.length > 0) {
+      throw new Error(`Missing required environment variable(s): ${missingVars.join(', ')}`);
+    }
+
     const provider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
     const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI.abi, provider);
 
@@ -127,7 +129,8 @@ export async function verifyMessage(message: string): Promise<VerificationResult
       timestamp: new Date(Number(timestamp) * 1000),
       txHash,
     };
-  } catch {
-    return { isValid: false, reason: `Verification failed: Please try again later` };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Please try again later';
+    return { isValid: false, reason: `Verification failed: ${message}` };
   }
 }
