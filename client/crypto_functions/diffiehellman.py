@@ -7,9 +7,7 @@ class X3DHState(State):
     """X3DH state management for establishing shared secrets."""
 
     @staticmethod
-    def _encode_public_key(
-        identity_key_format: IdentityKeyFormat, public_key: bytes
-    ) -> bytes:
+    def _encode_public_key(identity_key_format: IdentityKeyFormat, public_key: bytes) -> bytes:
         return public_key
 
     def _publish_bundle(self, bundle: Bundle) -> None:
@@ -37,8 +35,8 @@ async def test_x3dh():
 
     # Alice initiates key agreement using Bob's bundle
     header: Header
-    shared_secret_alice, associated_data, header = (
-        await alice_state.get_shared_secret_active(bob_bundle)
+    shared_secret_alice, associated_data, header = await alice_state.get_shared_secret_active(
+        bob_bundle
     )
 
     # Bob completes key agreement using Alice's header
