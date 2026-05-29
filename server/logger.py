@@ -14,7 +14,6 @@ def _get_log_level(level_str):
         "CRITICAL": logging.CRITICAL,
     }
 
-
     level = levels.get(level_str.upper())
 
     if level is None:
@@ -22,7 +21,6 @@ def _get_log_level(level_str):
         raise ValueError(f"Invalid log level: {level_str!r}. Expected one of: {', '.join(levels)}")
 
     return level
-
 
 
 def _cleanup_old_logs(log_dir, retention_days):
@@ -40,9 +38,11 @@ def setup_logging(config, script_path=None):
     root_logger = logging.getLogger()
 
     # Clear existing handlers to prevent duplicates on re-initialization
-    for handler in list(root_logger.handlers):
-        handler.close()
-        root_logger.removeHandler(handler)
+    for handler in list(root_logger.handlers):
+
+        handler.close()
+
+        root_logger.removeHandler(handler)
 
     stdout_config = config["logging"]["stdout"]
     file_config = config["logging"]["file"]
@@ -83,8 +83,7 @@ def setup_logging(config, script_path=None):
         file_handler = logging.FileHandler(log_path, encoding="utf-8")
         file_handler.setLevel(_get_log_level(file_config["level"]))
         file_handler.setFormatter(
-    root_logger.setLevel(min(enabled_levels) if enabled_levels else logging.WARNING)
-
+            root_logger.setLevel(min(enabled_levels) if enabled_levels else logging.WARNING)
         )
         root_logger.addHandler(file_handler)
         enabled_levels.append(_get_log_level(file_config["level"]))
