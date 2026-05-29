@@ -33,6 +33,7 @@ async def test_x3dh():
     bob_bundle = bob_state.bundle
 
     # Alice initiates key agreement using Bob's bundle
+    header: Header
     shared_secret_alice, associated_data, header = (
         await alice_state.get_shared_secret_active(bob_bundle)
     )
