@@ -1,6 +1,7 @@
 import logging
 import re
 
+from __future__ import annotations                                                                                                                        
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
