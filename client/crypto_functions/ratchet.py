@@ -13,6 +13,23 @@ class DoubleRatchet(DR):
     """
     Double Ratchet implementation with custom associated data construction.
     Binds ciphertext to the message header to prevent tampering.
+
+    All methods accept **dr_configuration as keyword arguments. Use the
+    module-level dr_configuration dict for convenience.
+
+    Session setup (classmethods):
+        encrypt_initial_message(shared_secret, recipient_ratchet_pub, message, associated_data, **dr_configuration)
+            -> (DoubleRatchet, EncryptedMessage)
+        decrypt_initial_message(shared_secret, own_ratchet_priv, message, associated_data, **dr_configuration)
+            -> (DoubleRatchet, bytes)
+
+    Messaging (instance methods):
+        encrypt_message(message, associated_data) -> EncryptedMessage
+        decrypt_message(message, associated_data) -> bytes
+
+    Serialization:
+        dr.json                          -> JSON-serializable state dict
+        from_json(serialized, **dr_configuration) -> DoubleRatchet
     """
 
     @staticmethod
@@ -27,11 +44,11 @@ class DoubleRatchet(DR):
 
 
 class DiffieHellmanRatchet(dhr25519.DiffieHellmanRatchet):
-    """X25519-based Diffie-Hellman ratchet for ephemeral key exchange."""
+    """X25519-based Diffie-Hellman ratchet for ephemeral key exchange. Used internally via dr_configuration."""
 
 
 class RootChainKDF(kdf_hkdf.KDF):
-    """HKDF-based KDF for the root chain. Advances during DH ratchet steps."""
+    """HKDF-based KDF for the root chain. Advances during DH ratchet steps. Used internally via dr_configuration."""
 
     @staticmethod
     def _get_hash_function() -> HashFunction:
@@ -43,7 +60,7 @@ class RootChainKDF(kdf_hkdf.KDF):
 
 
 class MessageChainKDF(kdf_separate_hmacs.KDF):
-    """HMAC-based KDF for the message chain. Derives unique keys per message."""
+    """HMAC-based KDF for the message chain. Derives unique keys per message. Used internally via dr_configuration."""
 
     @staticmethod
     def _get_hash_function() -> HashFunction:
@@ -52,10 +69,13 @@ class MessageChainKDF(kdf_separate_hmacs.KDF):
 
 class AES256GCMAEAD:
     """
-    AES-256-GCM authenticated encryption.
+    AES-256-GCM authenticated encryption. Used internally via dr_configuration.
 
-    Nonce:
-        12-byte random nonce, NIST minimum of random bits.
+    Can also be used standalone:
+        encrypt(plaintext, key, associated_data) -> bytes  (nonce prepended)
+        decrypt(ciphertext, key, associated_data) -> bytes
+
+    Key must be exactly 32 bytes. Nonce is 12-byte random, prepended to ciphertext.
     """
 
     NONCE_SIZE = 12
