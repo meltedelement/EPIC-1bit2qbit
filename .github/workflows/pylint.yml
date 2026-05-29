@@ -22,6 +22,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install pylint black isort pytest
         pip install "./server[dev]"
+        pip install "./client[dev]"
 
     - name: Auto-format with black and isort
       run: |
