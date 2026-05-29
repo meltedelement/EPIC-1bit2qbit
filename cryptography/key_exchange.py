@@ -1,12 +1,15 @@
-from x3dh import State, Bundle, Header, HashFunction, IdentityKeyFormat
 from typing import Any, Dict
+
+from x3dh import Bundle, HashFunction, Header, IdentityKeyFormat, State
 
 
 class X3DHState(State):
     """X3DH state management for establishing shared secrets."""
 
     @staticmethod
-    def _encode_public_key(identity_key_format: IdentityKeyFormat, public_key: bytes) -> bytes:
+    def _encode_public_key(
+        identity_key_format: IdentityKeyFormat, public_key: bytes
+    ) -> bytes:
         return public_key
 
     def _publish_bundle(self, bundle: Bundle) -> None:
@@ -30,7 +33,9 @@ async def test_x3dh():
     bob_bundle = bob_state.bundle
 
     # Alice initiates key agreement using Bob's bundle
-    shared_secret_alice, associated_data, header = await alice_state.get_shared_secret_active(bob_bundle)
+    shared_secret_alice, associated_data, header = (
+        await alice_state.get_shared_secret_active(bob_bundle)
+    )
 
     # Bob completes key agreement using Alice's header
     shared_secret_bob, _, _ = await bob_state.get_shared_secret_passive(header)
@@ -42,4 +47,5 @@ async def test_x3dh():
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(test_x3dh())
