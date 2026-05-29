@@ -3,10 +3,10 @@ import os
 
 import uvicorn
 from fastapi import FastAPI
-from .logger import setup_logging
 
 from .config.config import config
 from .database.db import Base, engine
+from .logger import setup_logging
 from .routes import auth
 
 setup_logging(config.model_dump())
