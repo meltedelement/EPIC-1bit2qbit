@@ -13,14 +13,14 @@ flowchart TD
     classDef store     fill:#6A1B9A,stroke:#4A148C,color:#fff
     classDef ok        fill:#2E7D32,stroke:#1B5E20,color:#fff
 
-    A([POST /register]):::terminal --> B["Validate request & generate token"]:::process
-    B --> C["Store user account + preloaded key bundle"]:::store
-    C --> D([Return token]):::ok
+    A([POST /register]):::terminal --> B["Validate request"]:::process
+    B --> C["Store user account"]:::store
+    C --> D([Return 201 — username confirmed]):::ok
 ```
 
 ---
 
-## 2. Login
+## 2. WS — Connect & Authenticate
 
 ```mermaid
 flowchart TD
@@ -31,18 +31,17 @@ flowchart TD
     classDef ok        fill:#2E7D32,stroke:#1B5E20,color:#fff
     classDef store     fill:#6A1B9A,stroke:#4A148C,color:#fff
 
-    A([POST /login]):::terminal --> B["Verify credentials"]:::process
-    B -- invalid --> C([Return 401]):::error
-    B -- valid --> D{"2FA required?"}:::decision
-    D -- yes --> E["Return 302 — redirect to verification webapp"]:::error
-    D -- no --> F["Create session / set online"]:::process
-    F --> G["Drain offline message queue (up to TTL)"]:::store
-    G --> H([Return session token]):::ok
+    A([Client opens WSS connection]):::terminal --> B["First message: auth frame\n{username, password}"]:::process
+    B --> C["Verify credentials"]:::process
+    C -- invalid --> D([Return auth error · close connection]):::error
+    C -- valid --> E["Register connection as session\nmark user online"]:::process
+    E --> F["Drain offline message queue (up to TTL)"]:::store
+    F --> G([Session live — connection is the session]):::ok
 ```
 
 ---
 
-## 3. WS — Send Message
+## 3. WS — Send Message (authenticated connection only)
 
 ```mermaid
 flowchart TD

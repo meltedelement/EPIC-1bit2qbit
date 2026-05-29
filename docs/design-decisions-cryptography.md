@@ -14,9 +14,7 @@ This document will be the basis for creation of our Cryptographic Design Documen
 
 **Nonce strategy:**
 
-- 96-bit sequential nonce per key, starting from a random base
-- Rekey after 2³² messages (aggregate per key) to stay within the GCM collision bound
-- Cap each individual encryption at 64 GB of plaintext
+- 96-bit pseudorandom nonce per key, permissable by NIST, and we are never hitting the 2^32 birthday bound limit.
 
 **Key length — why 256-bit:**
 AES-256 provides a 128-bit security level against quantum adversaries under Grover's algorithm (halves the brute-force cost), compared to AES-128's 64-bit post-quantum security. As this system may handle messages with long-term confidentiality requirements, 256-bit keys are appropriate.
@@ -97,14 +95,12 @@ Parameters must be tuned to the server hardware during integration testing. The 
 
 ## 4. Key Derivation
 
-### Chosen function: HKDF-SHA3-256
+### Chosen function: HKDF-SHA-256
 
 **Reference:** RFC 5869 — HMAC-based Extract-and-Expand Key Derivation Function (HKDF).
 
 HKDF is used to derive multiple keys from a shared secret (e.g. the PQXDH output). Separate `info` strings achieve domain separation so that keys derived for different purposes (encryption key, MAC key, etc.) are cryptographically independent.
 
-**SHA3-256 vs SHA-256:**
-SHA3-256 is used instead of SHA-256 for quantum resistance in the KDF context. Both are currently considered secure, but SHA3-256 provides an additional margin.
 
 **NIST SP 800-132 guidance:**
 Per NIST SP 800-132, the master key (MK) derived from the user's password is treated as a Key Encryption Key (KEK). A fresh random Data Protection Key (DPK) is generated to protect the actual data, and the MK wraps the DPK. This separates the password-derived key from the data encryption key, so that re-keying data does not require the user's password.
