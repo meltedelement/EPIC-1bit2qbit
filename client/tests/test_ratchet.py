@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 import pytest
 from crypto_functions.ratchet import AES256GCMAEAD, DoubleRatchet, dr_configuration
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 _PLAINTEXT = b"hello world"
 _AAD = b"associated data"
@@ -214,7 +214,9 @@ class TestDoubleRatchetEndToEnd:
             return results
 
         results = asyncio.run(run())
-        assert results == [f"alice msg {i}".encode() for i in range(5)] + [f"bob msg {i}".encode() for i in range(5)]
+        assert results == [f"alice msg {i}".encode() for i in range(5)] + [
+            f"bob msg {i}".encode() for i in range(5)
+        ]
 
     def test_out_of_order_messages(self):
         async def run():
