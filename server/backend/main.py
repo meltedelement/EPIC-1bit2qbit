@@ -3,11 +3,11 @@ import os
 
 import uvicorn
 from fastapi import FastAPI
+from logger import setup_logging
 
 from .config.config import config
 from .database.db import Base, engine
 from .routes import auth
-from logger import setup_logging
 
 setup_logging(config.model_dump(), script_path=__file__)
 logger = logging.getLogger(__name__)

@@ -1,7 +1,9 @@
 import logging
 import os
 import time
+
 import colorlog
+
 
 def _get_log_level(level_str):
     levels = {
@@ -9,7 +11,7 @@ def _get_log_level(level_str):
         "INFO": logging.INFO,
         "WARNING": logging.WARNING,
         "ERROR": logging.ERROR,
-        "CRITICAL": logging.CRITICAL
+        "CRITICAL": logging.CRITICAL,
     }
     return levels[level_str.upper()]
 
@@ -38,17 +40,19 @@ def setup_logging(config, script_path=None):
     if stdout_config["enabled"]:
         stdout_handler = logging.StreamHandler()
         stdout_handler.setLevel(_get_log_level(stdout_config["level"]))
-        stdout_handler.setFormatter(colorlog.ColoredFormatter(
-            fmt=stdout_config["format"],
-            datefmt=stdout_config["date_format"],
-            log_colors={
-                'DEBUG': 'cyan',
-                'INFO': 'green',
-                'WARNING': 'yellow',
-                'ERROR': 'red',
-                'CRITICAL': 'red,bg_white'
-            },
-        ))
+        stdout_handler.setFormatter(
+            colorlog.ColoredFormatter(
+                fmt=stdout_config["format"],
+                datefmt=stdout_config["date_format"],
+                log_colors={
+                    "DEBUG": "cyan",
+                    "INFO": "green",
+                    "WARNING": "yellow",
+                    "ERROR": "red",
+                    "CRITICAL": "red,bg_white",
+                },
+            )
+        )
         root_logger.addHandler(stdout_handler)
         enabled_levels.append(_get_log_level(stdout_config["level"]))
 
@@ -67,10 +71,9 @@ def setup_logging(config, script_path=None):
 
         file_handler = logging.FileHandler(log_path, encoding="utf-8")
         file_handler.setLevel(_get_log_level(file_config["level"]))
-        file_handler.setFormatter(logging.Formatter(
-            fmt=file_config["format"],
-            datefmt=file_config["date_format"]
-        ))
+        file_handler.setFormatter(
+            logging.Formatter(fmt=file_config["format"], datefmt=file_config["date_format"])
+        )
         root_logger.addHandler(file_handler)
         enabled_levels.append(_get_log_level(file_config["level"]))
 
