@@ -117,7 +117,7 @@ dr_configuration: Dict[str, Any] = {
     "message_chain_kdf": MessageChainKDF,
     "message_chain_constant": b"\x01\x02",
     "dos_protection_threshold": 100,
-    "max_num_skipped_message_keys": 1000,
+    "max_num_skipped_message_keys": 100,
     "aead": AES256GCMAEAD,
 }
 
