@@ -21,6 +21,8 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)) -> RegisterRes
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, "username already taken")  # pylint: disable=raise-missing-from
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "username already taken"
+        )  # pylint: disable=raise-missing-from
 
     return RegisterResponse(username=req.username)
