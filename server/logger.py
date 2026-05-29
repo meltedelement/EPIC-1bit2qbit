@@ -13,7 +13,11 @@ def _get_log_level(level_str):
         "ERROR": logging.ERROR,
         "CRITICAL": logging.CRITICAL,
     }
-    return levels[level_str.upper()]
+
+    level = levels.get(level_str.upper())
+    if level is None:
+        raise ValueError(f"Invalid log level: {level_str!r}. Expected one of: {', '.join(levels)}")
+    return level
 
 
 def _cleanup_old_logs(log_dir, retention_days):
