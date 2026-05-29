@@ -14,7 +14,7 @@ class Base(DeclarativeBase):
 
 
 def get_db() -> Iterator[Session]:
-    db = SessionLocal()
+    db = SessionFactory()  # pylint: disable=invalid-name
     try:
         yield db
     finally:
