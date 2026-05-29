@@ -1,9 +1,7 @@
+import VerifyPage from './VerifyPage';
+
 function App() {
-  return (
-    <main>
-      <h1>Hello, World!</h1>
-    </main>
-  )
+  return <VerifyPage />;
 }
 
-export default App
+export default App;
