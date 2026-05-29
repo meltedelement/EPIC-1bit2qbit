@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from whereWeHashPasswords import hash_password  # pylint: disable=import-error
+
 from ..database.db import get_db
 from ..database.models import User
 from ..database.schemas import RegisterRequest, RegisterResponse
-from whereWeHashPasswords import hash_password
 
 router = APIRouter(tags=["auth"])
 
@@ -20,6 +21,8 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)) -> RegisterRes
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, "username already taken")
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "username already taken"
+        )  # pylint: disable=raise-missing-from
 
     return RegisterResponse(username=req.username)
