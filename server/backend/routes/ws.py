@@ -1,4 +1,5 @@
 import logging
+import re
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
@@ -13,6 +14,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ws"])
 
 _ph = PasswordHasher()
+_MAX_MESSAGE_LEN = 4096
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 
 async def _authenticate(websocket: WebSocket) -> str | None:
@@ -57,6 +60,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     try:
         while True:
             message = await websocket.receive_text()
-            logger.info("message from '%s': %s", username, message)
+            if len(message) > _MAX_MESSAGE_LEN:
+                await websocket.close(code=1009, reason="message too large")
+                return
+            safe = _CONTROL_CHARS.sub("", message)
+            logger.info("message from '%s': %s", username, safe)
     except WebSocketDisconnect:
         logger.info("session closed: user='%s'", username)
