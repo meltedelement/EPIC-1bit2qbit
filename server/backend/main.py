@@ -3,7 +3,7 @@ import os
 
 import uvicorn
 from fastapi import FastAPI
-from logger import setup_logging
+from .logger import setup_logging
 
 from .config.config import config
 from .database.db import Base, engine
