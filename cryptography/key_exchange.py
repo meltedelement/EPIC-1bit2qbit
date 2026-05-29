@@ -21,7 +21,7 @@ x3dh_configuration: Dict[str, Any] = {
     "identity_key_format": IdentityKeyFormat.CURVE_25519,
     "hash_function": HashFunction.SHA_256,
     "info": b"EPIC X3DH",
-    "signed_pre_key_rotation_period": 604800,  # 7 days 
+    "signed_pre_key_rotation_period": 604800,  # 7 days
     "pre_key_refill_threshold": 99,
     "pre_key_refill_target": 100,
 }
