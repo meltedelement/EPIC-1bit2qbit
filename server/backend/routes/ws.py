@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 
@@ -23,6 +24,20 @@ _MAX_MESSAGE_LEN = 4096
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 
+def _verify_credentials(username: str, password: str) -> bool:
+    """DB lookup + Argon2 verify — runs in a worker thread."""
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        target_hash = user.password_hash if user is not None else _DUMMY_HASH
+        _ph.verify(target_hash, password)
+        return user is not None
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
+        return False
+    finally:
+        db.close()
+
+
 async def _authenticate(websocket: WebSocket) -> str | None:
     """Read first frame and return username on success, or close and return None."""
     try:
@@ -36,19 +51,10 @@ async def _authenticate(websocket: WebSocket) -> str | None:
         await websocket.close(code=4000, reason="invalid login frame")
         return None
 
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.username == frame.username).first()
-        target_hash = user.password_hash if user is not None else _DUMMY_HASH
-        _ph.verify(target_hash, frame.password)
-        if user is None:
-            await websocket.close(code=4001, reason="authentication failed")
-            return None
-    except (VerifyMismatchError, VerificationError, InvalidHashError):
+    ok = await asyncio.to_thread(_verify_credentials, frame.username, frame.password)
+    if not ok:
         await websocket.close(code=4001, reason="authentication failed")
         return None
-    finally:
-        db.close()
 
     return frame.username
 
@@ -61,7 +67,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     if username is None:
         return
 
-    logger.info("session opened: user='%s'", username)
+    logger.info("session opened: user=%s", repr(username))
 
     try:
         while True:
@@ -72,4 +78,4 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             safe = _CONTROL_CHARS.sub("", message)
             logger.info("message from '%s': %s", username, safe)
     except WebSocketDisconnect:
-        logger.info("session closed: user='%s'", username)
+        logger.info("session closed: user=%s", repr(username))
