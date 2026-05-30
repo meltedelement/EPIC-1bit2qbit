@@ -21,6 +21,7 @@ _ph = PasswordHasher()
 # preventing username enumeration via response-time differences.
 _DUMMY_HASH = _ph.hash("dummy")
 _MAX_MESSAGE_LEN = 4096
+_MAX_LOGIN_FRAME_LEN = 512
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 
@@ -43,6 +44,10 @@ async def _authenticate(websocket: WebSocket) -> str | None:
     try:
         raw = await websocket.receive_text()
     except WebSocketDisconnect:
+        return None
+
+    if len(raw) > _MAX_LOGIN_FRAME_LEN:
+        await websocket.close(code=4000, reason="invalid login frame")
         return None
 
     try:
