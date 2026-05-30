@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="1bit2qbit", version="0.1.0")
 app.include_router(auth.router)
+app.include_router(ws.router)
 
 
 def init_db() -> None:
