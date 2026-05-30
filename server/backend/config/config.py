@@ -13,6 +13,23 @@ from pydantic import BaseModel
 _CONFIG_PATH = Path.cwd() / "config.toml"
 
 
+class LogHandlerConfig(BaseModel):
+    enabled: bool
+    level: str
+    format: str
+    date_format: str
+
+
+class LogFileConfig(LogHandlerConfig):
+    directory: str
+    retention_days: int
+
+
+class LoggingConfig(BaseModel):
+    stdout: LogHandlerConfig
+    file: LogFileConfig
+
+
 class DbConfig(BaseModel):
     url: str
 
@@ -41,6 +58,7 @@ class NetworkConfig(BaseModel):
 class Config(BaseModel):
     network: NetworkConfig
     services: ServicesConfig
+    logging: LoggingConfig
 
 
 def _load() -> Config:

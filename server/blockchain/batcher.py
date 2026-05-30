@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 
 from dotenv import load_dotenv
@@ -6,6 +7,8 @@ from web3 import Web3
 from web3._utils.events import EventLogErrorFlags
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 MAX_LEAVES = 4_000
 
@@ -51,6 +54,7 @@ def _submit_batch(messages: list[str]) -> dict:
         raise ValueError("Cannot submit empty batch")
     if len(messages) > MAX_LEAVES:
         raise ValueError(f"Batch exceeds MAX_LEAVES limit ({len(messages)} > {MAX_LEAVES})")
+    logger.debug("Preparing batch — message_count=%d", len(messages))
 
     rpc_url = os.getenv("SEPOLIA_RPC_URL")
     contract_address = os.getenv("CONTRACT_ADDRESS")
@@ -94,18 +98,22 @@ def _submit_batch(messages: list[str]) -> dict:
 
     signed = w3.eth.account.sign_transaction(tx, private_key=private_key)
     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+    logger.info("Batch submitted — tx_hash=%s, leaf_count=%d", tx_hash.hex(), len(leaves))
     receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
 
     if receipt.status != 1:
+        logger.error("Transaction reverted on-chain — tx_hash=%s", tx_hash.hex())
         raise ValueError(f"Transaction {tx_hash.hex()} reverted on-chain")
 
     events = contract.events.BatchRecorded().process_receipt(
         receipt, errors=EventLogErrorFlags.Discard
     )
     if not events:
+        logger.error("BatchRecorded event missing — tx_hash=%s", tx_hash.hex())
         raise ValueError(f"BatchRecorded event not found in transaction {tx_hash.hex()}")
 
     batch_index = events[0]["args"]["batchIndex"]
+    logger.info("Batch confirmed — batch_index=%d, root=%s", batch_index, root.hex())
 
     return {
         "tx_hash": tx_hash.hex(),

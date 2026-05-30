@@ -1,3 +1,4 @@
+import logging
 import os
 
 import uvicorn
@@ -5,7 +6,11 @@ from fastapi import FastAPI
 
 from .config.config import config
 from .database.db import Base, engine
-from .routes import auth, ws
+from .logger import setup_logging
+from .routes import auth
+
+setup_logging(config.model_dump())
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="1bit2qbit", version="0.1.0")
 app.include_router(auth.router)
