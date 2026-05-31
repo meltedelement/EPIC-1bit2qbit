@@ -2,6 +2,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+from argon2 import PasswordHasher
 from backend.auth.credentials import verify_credentials
 from backend.crypto.password import hash_password
 from backend.routes.ws import router
@@ -45,6 +46,26 @@ class TestVerifyCredentials:
     def test_unknown_username_returns_false(self):
         with patch("backend.auth.credentials.SessionLocal", return_value=_mock_db(user=None)):
             assert verify_credentials("unknown", _PASSWORD) is False
+
+    def test_outdated_hash_is_rehashed_on_login(self):
+        old_hash = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1).hash(_PASSWORD)
+        user = MagicMock()
+        user.password_hash = old_hash
+        mock_db = _mock_db(user)
+        with patch("backend.auth.credentials.SessionLocal", return_value=mock_db):
+            assert verify_credentials("alice", _PASSWORD) is True
+        assert user.password_hash != old_hash
+        mock_db.commit.assert_called_once()
+
+    def test_outdated_hash_not_rehashed_on_wrong_password(self):
+        old_hash = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1).hash(_PASSWORD)
+        user = MagicMock()
+        user.password_hash = old_hash
+        mock_db = _mock_db(user)
+        with patch("backend.auth.credentials.SessionLocal", return_value=mock_db):
+            assert verify_credentials("alice", "wrong-password") is False
+        assert user.password_hash == old_hash
+        mock_db.commit.assert_not_called()
 
 
 class TestWebSocketAuth:
