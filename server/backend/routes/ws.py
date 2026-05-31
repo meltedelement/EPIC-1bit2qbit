@@ -25,8 +25,8 @@ def _verify_credentials(username: str, password: str) -> bool:
     try:
         user = db.query(User).filter(User.username == username).first()
         target_hash = user.password_hash if user is not None else DUMMY_HASH
-        verify_password(password, target_hash)
-        return user is not None
+        ok = verify_password(password, target_hash)
+        return user is not None and ok
     finally:
         db.close()
 
