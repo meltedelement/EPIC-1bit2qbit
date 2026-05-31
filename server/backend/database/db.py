@@ -6,9 +6,9 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from ..config import config
 
 engine = create_engine(config.services.backend.db.url, pool_pre_ping=True, future=True)
-SessionFactory = sessionmaker(
+SessionLocal = sessionmaker(  # pylint: disable=invalid-name
     bind=engine, autoflush=False, expire_on_commit=False
-)  # pylint: disable=invalid-name
+)
 
 
 class Base(DeclarativeBase):
@@ -16,7 +16,7 @@ class Base(DeclarativeBase):
 
 
 def get_db() -> Iterator[Session]:
-    db = SessionFactory()  # pylint: disable=invalid-name
+    db = SessionLocal()  # pylint: disable=invalid-name
     try:
         yield db
     finally:

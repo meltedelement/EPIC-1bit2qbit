@@ -38,6 +38,24 @@ This approach keeps AI artefacts co-located with the code changes they relate to
 
 ## System Architecture
 
+### Client Architecture
+
+_Decided during project scaffolding, May 2026._
+
+The client is a **C++ binary** — the full client, not just a networking shim. This satisfies the C++ component requirement with meaningful OOP (classes: `Client`, `User`, `Message`, `Conversation`, `MessageStore`, `Connection`, `CryptoProxy`) and gives the Networks rubric a hands-on TLS implementation.
+
+**Crypto subprocess split:** All cryptographic operations (Double Ratchet, PQXDH, AES-256-GCM, key management) run in a separate **Python subprocess** (`client/crypto_functions/`). The C++ binary spawns this subprocess at startup and communicates with it over a **Unix domain socket** using newline-delimited JSON (`{ "method": "...", ... }`). This avoids embedding the CPython interpreter in C++ (which requires managing the GIL and bridging async Python from sync C++), and lets us keep the existing Python crypto implementation without porting it.
+
+**TLS:** Raw OpenSSL (`libssl`/`libcrypto`) — not Boost.Beast, which abstracts the TLS handshake away. Direct use of `SSL_CTX_set_verify()`, `SSL_get_peer_certificate()`, and custom verification callbacks allows full control over certificate chain validation and TOFU key pinning. The Networks spec explicitly calls out low-level `libssl` usage as the target approach.
+
+**WebSocket:** Framed manually over the raw TLS socket. The WebSocket handshake (HTTP Upgrade, `Sec-WebSocket-Key`, frame masking) is implemented in C++ rather than delegated to a library, keeping the entire network stack transparent and auditable.
+
+**Async I/O:** Boost.Asio for the event loop and socket management — it handles async I/O without touching the TLS layer.
+
+**Why not pybind11?** pybind11 works cleanly when Python is the main process calling into a C++ `.so`. Embedding Python inside a C++ main binary (the reverse direction) requires managing the GIL, bridging `async`/`await` across the FFI boundary, and significantly increases build complexity. The subprocess + socket approach is simpler, debuggable, and process-isolated.
+
+---
+
 ### Messaging Model
 
 We are using a **hybrid real-time and asynchronous** model.
@@ -75,6 +93,7 @@ Users must be able to:
 - Delete a message for themselves only after the deletion timeframe
 - Edit a message for both parties within the editing timeframe
 - Forward a message from one chat to another
+- Revoke a recipient's access to a previously shared message
 - View sent chats per user
 - Change their password
 - Download an encrypted message object (for blockchain verification)
