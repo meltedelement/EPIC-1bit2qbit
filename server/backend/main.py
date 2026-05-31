@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from .config.config import config
 from .database.db import Base, engine
 from .logger import setup_logging
-from .routes import auth
+from .routes import auth, ws
 
 setup_logging(config.model_dump())
 logger = logging.getLogger(__name__)
