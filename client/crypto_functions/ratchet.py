@@ -18,10 +18,12 @@ class DoubleRatchet(DR):
     module-level dr_configuration dict for convenience.
 
     Session setup (classmethods):
-        encrypt_initial_message(shared_secret, recipient_ratchet_pub, message, associated_data, **dr_configuration)
-            -> (DoubleRatchet, EncryptedMessage)
-        decrypt_initial_message(shared_secret, own_ratchet_priv, message, associated_data, **dr_configuration)
-            -> (DoubleRatchet, bytes)
+        encrypt_initial_message(
+            shared_secret, recipient_ratchet_pub, message, associated_data,
+            **dr_configuration) -> (DoubleRatchet, EncryptedMessage)
+        decrypt_initial_message(
+            shared_secret, own_ratchet_priv, message, associated_data,
+            **dr_configuration) -> (DoubleRatchet, bytes)
 
     Messaging (instance methods):
         encrypt_message(message, associated_data) -> EncryptedMessage
@@ -44,11 +46,15 @@ class DoubleRatchet(DR):
 
 
 class DiffieHellmanRatchet(dhr25519.DiffieHellmanRatchet):
-    """X25519-based Diffie-Hellman ratchet for ephemeral key exchange. Used internally via dr_configuration."""
+    """X25519-based Diffie-Hellman ratchet for ephemeral key exchange.
+    Used internally via dr_configuration.
+    """
 
 
 class RootChainKDF(kdf_hkdf.KDF):
-    """HKDF-based KDF for the root chain. Advances during DH ratchet steps. Used internally via dr_configuration."""
+    """HKDF-based KDF for the root chain. Advances during DH ratchet steps.
+    Used internally via dr_configuration.
+    """
 
     @staticmethod
     def _get_hash_function() -> HashFunction:
@@ -60,7 +66,9 @@ class RootChainKDF(kdf_hkdf.KDF):
 
 
 class MessageChainKDF(kdf_separate_hmacs.KDF):
-    """HMAC-based KDF for the message chain. Derives unique keys per message. Used internally via dr_configuration."""
+    """HMAC-based KDF for the message chain. Derives unique keys per message.
+    Used internally via dr_configuration.
+    """
 
     @staticmethod
     def _get_hash_function() -> HashFunction:
@@ -121,37 +129,3 @@ dr_configuration: Dict[str, Any] = {
     "aead": AES256GCMAEAD,
 }
 
-
-# Example usage:
-#
-# from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-# from cryptography.hazmat.primitives import serialization
-#
-# async def create_double_ratchets(message: bytes, shared_secret: bytes, ad: bytes):
-#     # Bob generates his ratchet key pair
-#     bob_ratchet_priv = X25519PrivateKey.generate()
-#     bob_ratchet_pub = bob_ratchet_priv.public_key()
-#
-#     # Alice creates her Double Ratchet by encrypting the initial message for Bob
-#     alice_dr, initial_message_encrypted = await DoubleRatchet.encrypt_initial_message(
-#         shared_secret=shared_secret,
-#         recipient_ratchet_pub=bob_ratchet_pub.public_bytes_raw(),
-#         message=message,
-#         associated_data=ad,
-#         **dr_configuration
-#     )
-#
-#     # Bob creates his Double Ratchet by decrypting the initial message from Alice
-#     bob_dr, initial_message_decrypted = await DoubleRatchet.decrypt_initial_message(
-#         shared_secret=shared_secret,
-#         own_ratchet_priv=bob_ratchet_priv.private_bytes_raw(),
-#         message=initial_message_encrypted,
-#         associated_data=ad,
-#         **dr_configuration
-#     )
-#
-#     # Subsequent messages use encrypt_message/decrypt_message
-#     # encrypted = await alice_dr.encrypt_message(b"Hello Bob", ad)
-#     # decrypted = await bob_dr.decrypt_message(encrypted, ad)
-#
-#     return alice_dr, bob_dr

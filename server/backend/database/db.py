@@ -6,7 +6,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from ..config import config
 
 engine = create_engine(config.services.backend.db.url, pool_pre_ping=True, future=True)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)  # pylint: disable=invalid-name
 
 
 class Base(DeclarativeBase):
