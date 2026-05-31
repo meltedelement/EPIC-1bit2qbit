@@ -80,9 +80,6 @@ Individual services:
 
 ## Environment variables
 
-Copy `.env.example` to `.env` before starting. Optional TLS variables:
+Copy `.env.example` to `.env` before starting. See `.env.example` for required variables (Sepolia RPC, wallet private key, contract address).
 
-| Variable | Description |
-|---|---|
-| `TLS_CERT_FILE` | Path to TLS certificate (both must be set together) |
-| `TLS_KEY_FILE` | Path to TLS private key |
+TLS is terminated by nginx, not the backend — do not set TLS variables on the uvicorn process.

@@ -1,5 +1,4 @@
 import logging
-import os
 
 import uvicorn
 from fastapi import FastAPI
@@ -23,19 +22,11 @@ def init_db() -> None:
 
 
 def main() -> None:
-    cert = os.environ.get("TLS_CERT_FILE")
-    key = os.environ.get("TLS_KEY_FILE")
-
-    if bool(cert) != bool(key):
-        raise SystemExit("TLS_CERT_FILE and TLS_KEY_FILE must both be set or both be unset")
-
     uvicorn.run(
         "backend.main:app",
         host=config.services.backend.host,
         port=config.services.backend.internal_port,
         root_path="/backend",
-        ssl_certfile=cert,
-        ssl_keyfile=key,
     )
 
 
