@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from ..crypto.password import hash_password
 
+from ..crypto.password import hash_password
 from ..database.db import get_db
 from ..database.models import User
 from ..database.schemas import RegisterRequest, RegisterResponse
