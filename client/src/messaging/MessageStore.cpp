@@ -19,12 +19,12 @@ std::vector<std::string> MessageStore::list_peers() const {
     return {};
 }
 
-void MessageStore::save_pinned_key(const std::string& /*username*/,
-                                   const std::string& /*fingerprint*/) {
-    // TODO: UPSERT into pinned_keys
+void MessageStore::pin_identity_key(const std::string& /*username*/,
+                                    const std::string& /*ik_pub*/) {
+    // TODO: UPSERT into pinned_keys (ik_pub is raw public key bytes, base64-encoded)
 }
 
-std::optional<std::string> MessageStore::load_pinned_key(const std::string& /*username*/) const {
-    // TODO: SELECT fingerprint FROM pinned_keys WHERE username = ?
+std::optional<std::string> MessageStore::load_pinned_identity_key(const std::string& /*username*/) const {
+    // TODO: SELECT ik_pub FROM pinned_keys WHERE username = ?
     return std::nullopt;
 }
