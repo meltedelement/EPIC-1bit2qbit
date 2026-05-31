@@ -1,7 +1,10 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <boost/asio.hpp>
 #include <openssl/ssl.h>
 #include "connection/TlsContext.h"
@@ -18,24 +21,34 @@ public:
     Connection(const Connection&)            = delete;
     Connection& operator=(const Connection&) = delete;
 
-    // Blocking: TCP connect → TLS handshake + TOFU pin → WS upgrade
+    // Blocking: TCP connect → TLS handshake + TOFU pin → WS upgrade.
+    // pinned_fp: pass the stored fingerprint from MessageStore, or "" for first use.
+    // After connect(), call cert_fingerprint() to get the observed fingerprint;
+    // if pinned_fp was empty, save it to MessageStore.
     void connect(const std::string& pinned_fp = "");
     void disconnect();
 
-    void send_text(const std::string& payload);  // sends a WS text frame
+    void send_text(const std::string& payload);
     void on_message(MessageCallback cb);
 
-    bool is_connected() const;
+    bool        is_connected() const;
+    std::string cert_fingerprint() const;  // observed server cert fingerprint
 
 private:
-    void        tcp_connect();
-    void        tls_handshake(const std::string& pinned_fp);
-    void        ws_handshake();
-    void        read_loop();
+    void tcp_connect();
+    void tls_handshake(const std::string& pinned_fp);
+    void ws_handshake();
+    void read_loop();
 
-    std::string ws_encode_frame(const std::string& payload);
+    // Raw SSL I/O
+    std::string ssl_read_exact(size_t n);
+    void        ssl_write_all(const std::string& data);
+
+    // WebSocket framing
+    void        ws_send_frame(uint8_t opcode, const std::string& payload);
+    std::string ws_encode_frame(uint8_t opcode, const std::string& payload);
     std::string ws_decode_frame();
-    std::string ws_key_base64();  // random 16-byte nonce, base64
+    std::string ws_key_base64();
 
     std::string                       host_;
     uint16_t                          port_;
@@ -43,6 +56,10 @@ private:
     boost::asio::io_context           io_ctx_;
     boost::asio::ip::tcp::socket      tcp_sock_;
     SSL*                              ssl_{nullptr};
+    std::string                       server_cert_fp_;
     MessageCallback                   on_message_cb_;
-    bool                              connected_{false};
+    std::atomic<bool>                 connected_{false};
+    std::atomic<bool>                 running_{false};
+    std::thread                       read_thread_;
+    std::mutex                        write_mutex_;
 };
