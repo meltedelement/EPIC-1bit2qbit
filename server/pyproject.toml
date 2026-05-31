@@ -27,7 +27,7 @@ epic-api        = "backend.main:main"
 epic-api-initdb = "backend.main:init_db"
 
 [tool.pytest.ini_options]
-pythonpath = [".", "blockchain"]
+pythonpath = [".", "backend/blockchain"]
 
 [build-system]
 requires = ["setuptools>=68"]
