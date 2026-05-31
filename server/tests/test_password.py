@@ -2,7 +2,7 @@ import pytest
 from argon2.exceptions import VerifyMismatchError
 from backend.crypto.password import hash_password, needs_rehash, verify_password
 
-_PASSWORD = "correct-horse-battery-staple"
+_PASSWORD = "dont-roll-your-own-crypto"
 
 
 class TestHashPassword:
