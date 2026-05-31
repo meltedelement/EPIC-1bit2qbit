@@ -6,11 +6,6 @@ from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatc
 # We only have 2 cores, so we set it to 1.
 _ph = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=1)
 
-# Pre-hashed dummy used to equalise timing when the username does not exist,
-# preventing username enumeration via response-time differences.
-DUMMY_HASH = _ph.hash("dummy")
-
-
 def hash_password(password: str) -> str:
     return _ph.hash(password)
 

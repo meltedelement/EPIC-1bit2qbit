@@ -2,8 +2,9 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+from backend.auth.credentials import verify_credentials
 from backend.crypto.password import hash_password
-from backend.routes.ws import _verify_credentials, router
+from backend.routes.ws import router
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -34,21 +35,21 @@ def _login_frame(username="alice", password=_PASSWORD):
 
 class TestVerifyCredentials:
     def test_valid_credentials_returns_true(self):
-        with patch("backend.routes.ws.SessionLocal", return_value=_mock_db(_mock_user())):
-            assert _verify_credentials("alice", _PASSWORD) is True
+        with patch("backend.auth.credentials.SessionLocal", return_value=_mock_db(_mock_user())):
+            assert verify_credentials("alice", _PASSWORD) is True
 
     def test_wrong_password_returns_false(self):
-        with patch("backend.routes.ws.SessionLocal", return_value=_mock_db(_mock_user())):
-            assert _verify_credentials("alice", "wrong-password") is False
+        with patch("backend.auth.credentials.SessionLocal", return_value=_mock_db(_mock_user())):
+            assert verify_credentials("alice", "wrong-password") is False
 
     def test_unknown_username_returns_false(self):
-        with patch("backend.routes.ws.SessionLocal", return_value=_mock_db(user=None)):
-            assert _verify_credentials("unknown", _PASSWORD) is False
+        with patch("backend.auth.credentials.SessionLocal", return_value=_mock_db(user=None)):
+            assert verify_credentials("unknown", _PASSWORD) is False
 
 
 class TestWebSocketAuth:
     def test_valid_login_accepted(self):
-        with patch("backend.routes.ws.SessionLocal", return_value=_mock_db(_mock_user())):
+        with patch("backend.auth.credentials.SessionLocal", return_value=_mock_db(_mock_user())):
             with _client.websocket_connect("/ws") as ws:
                 ws.send_text(_login_frame())
                 ws.send_text("hello")
@@ -68,7 +69,7 @@ class TestWebSocketAuth:
         assert exc.value.code == 4000
 
     def test_wrong_password_closes_4001(self):
-        with patch("backend.routes.ws.SessionLocal", return_value=_mock_db(_mock_user())):
+        with patch("backend.auth.credentials.SessionLocal", return_value=_mock_db(_mock_user())):
             with _client.websocket_connect("/ws") as ws:
                 ws.send_text(_login_frame(password="wrong-password"))
                 with pytest.raises(WebSocketDisconnect) as exc:
@@ -76,7 +77,7 @@ class TestWebSocketAuth:
         assert exc.value.code == 4001
 
     def test_unknown_user_closes_4001(self):
-        with patch("backend.routes.ws.SessionLocal", return_value=_mock_db(user=None)):
+        with patch("backend.auth.credentials.SessionLocal", return_value=_mock_db(user=None)):
             with _client.websocket_connect("/ws") as ws:
                 ws.send_text(_login_frame())
                 with pytest.raises(WebSocketDisconnect) as exc:
@@ -86,7 +87,7 @@ class TestWebSocketAuth:
 
 class TestWebSocketMessages:
     def test_oversized_message_closes_1009(self):
-        with patch("backend.routes.ws.SessionLocal", return_value=_mock_db(_mock_user())):
+        with patch("backend.auth.credentials.SessionLocal", return_value=_mock_db(_mock_user())):
             with _client.websocket_connect("/ws") as ws:
                 ws.send_text(_login_frame())
                 ws.send_text("x" * 4097)
@@ -95,7 +96,7 @@ class TestWebSocketMessages:
         assert exc.value.code == 1009
 
     def test_message_at_limit_accepted(self):
-        with patch("backend.routes.ws.SessionLocal", return_value=_mock_db(_mock_user())):
+        with patch("backend.auth.credentials.SessionLocal", return_value=_mock_db(_mock_user())):
             with _client.websocket_connect("/ws") as ws:
                 ws.send_text(_login_frame())
                 ws.send_text("x" * 4096)

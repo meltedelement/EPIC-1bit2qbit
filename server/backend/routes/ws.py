@@ -7,9 +7,7 @@ import re
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
-from ..crypto.password import DUMMY_HASH, verify_password
-from ..database.db import SessionLocal
-from ..database.models import User
+from ..auth.credentials import verify_credentials
 from ..database.schemas import LoginFrame
 
 logger = logging.getLogger(__name__)
@@ -17,18 +15,6 @@ router = APIRouter(tags=["ws"])
 
 _MAX_MESSAGE_LEN = 4096
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
-
-
-def _verify_credentials(username: str, password: str) -> bool:
-    """DB lookup + Argon2 verify — runs in a worker thread."""
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.username == username).first()
-        target_hash = user.password_hash if user is not None else DUMMY_HASH
-        ok = verify_password(target_hash, password)
-        return user is not None and ok
-    finally:
-        db.close()
 
 
 async def _authenticate(websocket: WebSocket) -> str | None:
@@ -44,7 +30,7 @@ async def _authenticate(websocket: WebSocket) -> str | None:
         await websocket.close(code=4000, reason="invalid login frame")
         return None
 
-    ok = await asyncio.to_thread(_verify_credentials, frame.username, frame.password)
+    ok = await asyncio.to_thread(verify_credentials, frame.username, frame.password)
     if not ok:
         await websocket.close(code=4001, reason="authentication failed")
         return None
