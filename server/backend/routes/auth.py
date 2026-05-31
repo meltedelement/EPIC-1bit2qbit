@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from whereWeHashPasswords import hash_password  # pylint: disable=import-error
 
+from ..crypto.password import hash_password
 from ..database.db import get_db
 from ..database.models import User
 from ..database.schemas import RegisterRequest, RegisterResponse
