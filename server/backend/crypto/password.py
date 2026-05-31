@@ -2,7 +2,8 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
 # RFC 9106 parameters for memory-constrained environments: t=3, m=64 MiB.
-# OWASP minimum is m=12 MiB, t=3. Parallelism does not affect security. We only have 2 cores, so we set it to 1.
+# OWASP minimum is m=12 MiB, t=3. Parallelism does not affect security. 
+# We only have 2 cores, so we set it to 1.
 _ph = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=1)
 
 
