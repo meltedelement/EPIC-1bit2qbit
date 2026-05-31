@@ -33,6 +33,7 @@ def main() -> None:
         "backend.main:app",
         host=config.services.backend.host,
         port=config.services.backend.internal_port,
+        root_path="/backend",
         ssl_certfile=cert,
         ssl_keyfile=key,
     )
