@@ -18,7 +18,7 @@ flowchart LR
         MLM["Message Lifecycle Manager"]:::messaging
         CONN["Connection Layer (Raw OpenSSL · Boost.Asio)"]:::transport
         ORCH["Main Orchestrator"]:::orch
-        CRYPTO["Python Crypto Subprocess\n(Unix socket · JSON IPC)"]:::security
+        CRYPTO["Python Crypto Subprocess\n(stdin/stdout · JSON IPC)"]:::security
         KEYS["Local Key Manager"]:::security
         DBC[("Encrypted DB")]:::storage
     end
@@ -72,7 +72,7 @@ flowchart TB
     ORCH --> UI
     ORCH --> MLM
     ORCH --> CONN
-    ORCH -.->|"Unix socket · JSON IPC"| CRYPTO
+    ORCH -.->|"stdin/stdout · JSON IPC"| CRYPTO
     ORCH --> KEYS
     KEYS --> DBC
     MLM --> DBC
@@ -130,7 +130,7 @@ flowchart TB
 | Orange | Orchestration | Main Orchestrator |
 | Teal | Transport | Connection Layer, WebSockets Router |
 | Cyan | Messaging & State | Message Lifecycle Manager, Session Manager, Message Queue |
-| Red | Security & Keys | Python Crypto Subprocess (separate process, Unix socket IPC), Local Key Manager, Auth Handler, Key Bundle Directory |
+| Red | Security & Keys | Python Crypto Subprocess (separate process, stdin/stdout JSON IPC), Local Key Manager, Auth Handler, Key Bundle Directory |
 | Brown | Blockchain | Blockchain Batching Service |
 | Grey | Infrastructure | Logging / Rate Limiting |
 | Purple | Storage | Encrypted DB, DB (SQL) |
