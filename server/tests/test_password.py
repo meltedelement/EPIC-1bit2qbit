@@ -19,15 +19,15 @@ class TestHashPassword:
 class TestVerifyPassword:
     def test_correct_password_returns_true(self):
         hashed = hash_password(_PASSWORD)
-        assert verify_password(_PASSWORD, hashed) is True
+        assert verify_password(hashed, _PASSWORD) is True
 
     def test_wrong_password_returns_false(self):
         hashed = hash_password(_PASSWORD)
-        assert verify_password("wrong-password", hashed) is False
+        assert verify_password(hashed, "wrong-password") is False
 
     def test_empty_password_returns_false(self):
         hashed = hash_password(_PASSWORD)
-        assert verify_password("", hashed) is False
+        assert verify_password(hashed, "") is False
 
 
 class TestNeedsRehash:
