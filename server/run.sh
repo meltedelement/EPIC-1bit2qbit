@@ -6,7 +6,7 @@
 #   ./run.sh start --verify      Build frontend and start/reload nginx
 #   ./run.sh stop                Stop all services
 #   ./run.sh stop --backend      Stop backend only
-#   ./run.sh stop --verify       Stop nginx
+#   ./run.sh stop --verify       Disable verify site and reload nginx
 #   ./run.sh status              Show service status and URLs
 #   ./run.sh logs                Tail all logs (backend + nginx)
 #   ./run.sh logs --backend      Tail backend logs only
@@ -123,16 +123,14 @@ start_verify() {
     cd "$SCRIPT_DIR"
     ok "Frontend built → web-app/dist/"
 
+    info "Enabling verify site…"
+    sudo ln -sf /etc/nginx/sites-available/1bit2qbit /etc/nginx/sites-enabled/1bit2qbit
     if nginx_running; then
-        info "Reloading nginx…"
         sudo systemctl reload nginx
-        ok "nginx reloaded"
     else
-        info "Starting nginx…"
         sudo systemctl start nginx
-        ok "nginx started"
     fi
-    printf "    http://1bit2qbit.theburkenator.com/verify/\n"
+    ok "Verify started → http://1bit2qbit.theburkenator.com/verify/"
 }
 
 stop_backend() {
@@ -148,18 +146,30 @@ stop_backend() {
 }
 
 stop_verify() {
-    if nginx_running; then
-        info "Stopping nginx…"
-        sudo systemctl stop nginx
-        ok "nginx stopped"
+    if [[ -L /etc/nginx/sites-enabled/1bit2qbit ]]; then
+        info "Disabling verify site…"
+        sudo rm -f /etc/nginx/sites-enabled/1bit2qbit
+        sudo systemctl reload nginx
+        ok "Verify stopped"
     else
-        warn "nginx is not running"
+        warn "Verify is not enabled"
     fi
 }
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 cmd_setup() {
+    # Create a virtual environment if neither .venv nor venv exists
+    local venv_found=false
+    for v in .venv venv; do
+        [[ -f "$SCRIPT_DIR/$v/bin/activate" ]] && venv_found=true && break
+    done
+    if [[ "$venv_found" == false ]]; then
+        info "Creating Python virtual environment (.venv)…"
+        python3 -m venv "$SCRIPT_DIR/.venv"
+        ok "Virtual environment created"
+    fi
+
     info "Installing Python dependencies…"
     activate_venv
     pip install -e ".[dev]" -q
@@ -288,7 +298,7 @@ Commands:
   start --verify        Build frontend and start/reload nginx
   stop                  Stop all services
   stop --backend        Stop backend only
-  stop --verify         Stop nginx
+  stop --verify         Disable verify site and reload nginx
   status                Show service status and URLs
   logs                  Tail all logs (backend + nginx)
   logs --backend        Tail backend logs only
