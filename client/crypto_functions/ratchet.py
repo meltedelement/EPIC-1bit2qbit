@@ -128,4 +128,3 @@ dr_configuration: Dict[str, Any] = {
     "max_num_skipped_message_keys": 100,
     "aead": AES256GCMAEAD,
 }
-
