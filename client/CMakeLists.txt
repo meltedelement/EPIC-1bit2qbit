@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.21)
 project(epic-client LANGUAGES CXX)
 
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -13,23 +17,42 @@ find_package(Boost 1.74 REQUIRED)   # header-only; Asio needs no linked componen
 # ── Fetched dependencies ───────────────────────────────────────────────────────
 include(FetchContent)
 
-FetchContent_Declare(ftxui
-    GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI
-    GIT_TAG        v5.0.0
-    GIT_SHALLOW    TRUE
-)
-FetchContent_Declare(nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json
-    GIT_TAG        v3.11.3
-    GIT_SHALLOW    TRUE
-)
-FetchContent_Declare(CLI11
-    GIT_REPOSITORY https://github.com/CLIUtils/CLI11
-    GIT_TAG        v2.4.2
-    GIT_SHALLOW    TRUE
-)
+find_package(ftxui 5.0 QUIET)
+find_package(nlohmann_json 3.11 QUIET)
+find_package(CLI11 2.4 QUIET)
 
-FetchContent_MakeAvailable(ftxui nlohmann_json CLI11)
+set(_fetch_deps "")
+
+if(NOT ftxui_FOUND)
+    FetchContent_Declare(ftxui
+        GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI
+        GIT_TAG        v5.0.0
+        GIT_SHALLOW    TRUE
+    )
+    list(APPEND _fetch_deps ftxui)
+endif()
+
+if(NOT nlohmann_json_FOUND)
+    FetchContent_Declare(nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json
+        GIT_TAG        v3.11.3
+        GIT_SHALLOW    TRUE
+    )
+    list(APPEND _fetch_deps nlohmann_json)
+endif()
+
+if(NOT CLI11_FOUND)
+    FetchContent_Declare(CLI11
+        GIT_REPOSITORY https://github.com/CLIUtils/CLI11
+        GIT_TAG        v2.4.2
+        GIT_SHALLOW    TRUE
+    )
+    list(APPEND _fetch_deps CLI11)
+endif()
+
+if(_fetch_deps)
+    FetchContent_MakeAvailable(${_fetch_deps})
+endif()
 
 # ── Target ────────────────────────────────────────────────────────────────────
 set(SOURCES
