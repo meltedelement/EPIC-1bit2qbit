@@ -67,15 +67,18 @@ nginx_running() {
     systemctl is-active --quiet nginx 2>/dev/null
 }
 
-# Sets DO_BACKEND and DO_VERIFY based on flags; defaults to both if no flags given.
+# Sets DO_BACKEND, DO_VERIFY, and REBUILD_VERIFY based on flags.
+# Defaults to both services if no flags given; REBUILD_VERIFY is only true when
+# --verify is explicitly passed (plain "start" should not trigger a Vite build).
 parse_flags() {
     DO_BACKEND=false
     DO_VERIFY=false
+    REBUILD_VERIFY=false
     local saw_flag=false
     while [[ $# -gt 0 ]]; do
         case $1 in
             --backend) DO_BACKEND=true; saw_flag=true ;;
-            --verify)  DO_VERIFY=true;  saw_flag=true ;;
+            --verify)  DO_VERIFY=true; REBUILD_VERIFY=true; saw_flag=true ;;
             *) die "Unknown flag: $1" ;;
         esac
         shift
@@ -117,11 +120,13 @@ start_backend() {
 }
 
 start_verify() {
-    info "Building frontend…"
-    cd "$SCRIPT_DIR/web-app"
-    npm run build
-    cd "$SCRIPT_DIR"
-    ok "Frontend built → web-app/dist/"
+    if [[ "$REBUILD_VERIFY" == true ]]; then
+        info "Building frontend…"
+        cd "$SCRIPT_DIR/web-app"
+        npm run build
+        cd "$SCRIPT_DIR"
+        ok "Frontend built → web-app/dist/"
+    fi
 
     info "Enabling verify site…"
     sudo ln -sf /etc/nginx/sites-available/1bit2qbit /etc/nginx/sites-enabled/1bit2qbit
@@ -138,6 +143,15 @@ stop_backend() {
     if pid=$(backend_pid 2>/dev/null); then
         info "Stopping backend (PID $pid)…"
         kill "$pid"
+        local i
+        for i in 1 2 3 4 5; do
+            sleep 1
+            if ! kill -0 "$pid" 2>/dev/null; then break; fi
+        done
+        if kill -0 "$pid" 2>/dev/null; then
+            warn "Process did not exit after 5s — sending SIGKILL"
+            kill -9 "$pid"
+        fi
         rm -f "$BACKEND_PID"
         ok "Backend stopped"
     else
@@ -185,19 +199,14 @@ cmd_setup() {
     cd "$SCRIPT_DIR"
     ok "Frontend built → web-app/dist/"
 
-    # Warn if the nginx.conf alias path doesn't match where we actually are
-    local expected_alias="$WEBAPP_DIST/"
-    local conf_alias
-    conf_alias=$(sed -n 's/.*alias[[:space:]]\+\(.*\);/\1/p' "$SCRIPT_DIR/nginx.conf" | head -1)
-    if [[ -n "$conf_alias" && "$conf_alias" != "$expected_alias" ]]; then
-        warn "nginx.conf alias path does not match actual dist location:"
-        warn "  conf has:  $conf_alias"
-        warn "  should be: $expected_alias"
-        warn "Update the alias line in server/nginx.conf before reloading nginx."
-    fi
-
     info "Installing nginx config…"
-    sudo cp "$SCRIPT_DIR/nginx.conf" /etc/nginx/sites-available/1bit2qbit
+    # Substitute $WEBAPP_DIST into the alias line so the installed config is always
+    # correct for this checkout location, regardless of what path is in the source file.
+    local tmp
+    tmp=$(mktemp)
+    sed "s|alias [^;]*/web-app/dist/;|alias $WEBAPP_DIST/;|" "$SCRIPT_DIR/nginx.conf" > "$tmp"
+    sudo cp "$tmp" /etc/nginx/sites-available/1bit2qbit
+    rm -f "$tmp"
     sudo ln -sf /etc/nginx/sites-available/1bit2qbit /etc/nginx/sites-enabled/1bit2qbit
     # Remove the default site so it doesn't conflict on port 80
     sudo rm -f /etc/nginx/sites-enabled/default
@@ -270,11 +279,11 @@ cmd_logs() {
 
     if [[ "$DO_BACKEND" == true && "$DO_VERIFY" == true ]]; then
         info "Tailing all logs — Ctrl+C to stop"
-        # Kill background jobs on exit
         trap 'kill $(jobs -p) 2>/dev/null; exit' INT TERM EXIT
         if [[ ${#backend_files[@]} -gt 0 ]]; then
             tail -F "${backend_files[@]}" &
         fi
+        sudo -v  # cache credentials before backgrounding — avoids a prompt inside &
         sudo tail -F "${nginx_logs[@]}" &
         wait
     elif [[ "$DO_BACKEND" == true ]]; then
