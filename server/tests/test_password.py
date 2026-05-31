@@ -1,6 +1,5 @@
 import pytest
 from argon2.exceptions import VerifyMismatchError
-
 from backend.crypto.password import hash_password, needs_rehash, verify_password
 
 _PASSWORD = "correct-horse-battery-staple"
@@ -37,6 +36,7 @@ class TestNeedsRehash:
 
     def test_outdated_parameters_needs_rehash(self):
         from argon2 import PasswordHasher
+
         old_ph = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
         old_hash = old_ph.hash(_PASSWORD)
         assert needs_rehash(old_hash) is True
