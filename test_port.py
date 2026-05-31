@@ -1,5 +1,6 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -9,6 +10,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         print(f"[{self.client_address[0]}] {format % args}")
+
 
 if __name__ == "__main__":
     server = HTTPServer(("0.0.0.0", 1212), Handler)
