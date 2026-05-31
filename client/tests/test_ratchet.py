@@ -140,7 +140,9 @@ class TestBuildAssociatedData:  # pylint: disable=protected-access
 
 
 async def _setup_session():
-    """Simulate a post-X3DH session: shared secret agreed externally, Bob supplies his ratchet pub key."""
+    """Simulate a post-X3DH session.
+    Shared secret agreed externally; Bob supplies his ratchet pub key.
+    """
     shared_secret = os.urandom(32)
     bob_ratchet_priv = X25519PrivateKey.generate()
 
