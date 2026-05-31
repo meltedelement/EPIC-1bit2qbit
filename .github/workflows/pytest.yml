@@ -18,6 +18,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest
           pip install "./server[dev]"
+          pip install "./client[dev]"
 
-      - name: Run tests
+      - name: Run server tests
         run: python -m pytest server/tests -v
+      - name: Run client tests
+        run: python -m pytest client/tests -v

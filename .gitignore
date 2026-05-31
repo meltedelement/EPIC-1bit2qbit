@@ -18,6 +18,9 @@ server/web-app/.env
 server/web-app/dist/
 server/web-app/build/
 
+# client
+client/build/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -38,6 +41,9 @@ venv/
 .DS_Store
 Thumbs.db
 
+# vs settings
+.claude
+.vscode
 # Claude
 CLAUDE.md
 claude-logs/

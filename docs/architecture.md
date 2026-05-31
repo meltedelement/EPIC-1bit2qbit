@@ -14,11 +14,11 @@ flowchart LR
     classDef storage    fill:#6A1B9A,stroke:#4A148C,color:#fff
 
     subgraph CA["Client Application"]
-        UI["UI / CLI Layer"]:::entry
+        UI["UI / CLI Layer (FTXUI)"]:::entry
         MLM["Message Lifecycle Manager"]:::messaging
-        CONN["Connection Layer (C++ · TLS/WS)"]:::transport
+        CONN["Connection Layer (Raw OpenSSL · Boost.Asio)"]:::transport
         ORCH["Main Orchestrator"]:::orch
-        CRYPTO["Python Cryptography Module"]:::security
+        CRYPTO["Python Crypto Subprocess\n(Unix socket · JSON IPC)"]:::security
         KEYS["Local Key Manager"]:::security
         DBC[("Encrypted DB")]:::storage
     end
@@ -56,21 +56,29 @@ flowchart TB
     classDef security   fill:#B71C1C,stroke:#7F0000,color:#fff
     classDef storage    fill:#6A1B9A,stroke:#4A148C,color:#fff
 
-    UI["UI / CLI Layer"]:::entry
-    MLM["Message Lifecycle Manager"]:::messaging
-    CONN["Connection Layer (C++ · TLS/WS Handler)"]:::transport
-    ORCH["Main Orchestrator"]:::orch
-    CRYPTO["Python Cryptography Module"]:::security
-    KEYS["Local Key Manager"]:::security
-    DBC[("Encrypted DB (SQL)\n· Local key storage\n· Message / data history")]:::storage
+    subgraph CPP["C++ Binary"]
+        UI["UI / CLI Layer (FTXUI)"]:::entry
+        MLM["Message Lifecycle Manager"]:::messaging
+        CONN["Connection Layer\n(Raw OpenSSL · Boost.Asio)"]:::transport
+        ORCH["Main Orchestrator"]:::orch
+        KEYS["Local Key Manager"]:::security
+        DBC[("Encrypted DB (SQL)\n· Local key storage\n· Message / data history")]:::storage
+    end
+
+    subgraph PY["Python Crypto Subprocess"]
+        CRYPTO["Cryptography Module\n(Double Ratchet · PQXDH · AES-256-GCM)"]:::security
+    end
 
     ORCH --> UI
     ORCH --> MLM
     ORCH --> CONN
-    ORCH --> CRYPTO
+    ORCH -.->|"Unix socket · JSON IPC"| CRYPTO
     ORCH --> KEYS
     KEYS --> DBC
     MLM --> DBC
+
+    style CPP fill:#E3F2FD,stroke:#1565C0
+    style PY  fill:#FCE4EC,stroke:#B71C1C
 ```
 
 ---
@@ -122,7 +130,7 @@ flowchart TB
 | Orange | Orchestration | Main Orchestrator |
 | Teal | Transport | Connection Layer, WebSockets Router |
 | Cyan | Messaging & State | Message Lifecycle Manager, Session Manager, Message Queue |
-| Red | Security & Keys | Python Cryptography, Local Key Manager, Auth Handler, Key Bundle Directory |
+| Red | Security & Keys | Python Crypto Subprocess (separate process, Unix socket IPC), Local Key Manager, Auth Handler, Key Bundle Directory |
 | Brown | Blockchain | Blockchain Batching Service |
 | Grey | Infrastructure | Logging / Rate Limiting |
 | Purple | Storage | Encrypted DB, DB (SQL) |
