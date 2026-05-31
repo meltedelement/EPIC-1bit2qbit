@@ -4,11 +4,10 @@ import asyncio
 import logging
 import re
 
-from argon2 import PasswordHasher
-from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
+from ..crypto.password import DUMMY_HASH, verify_password
 from ..database.db import SessionLocal
 from ..database.models import User
 from ..database.schemas import LoginFrame
@@ -16,10 +15,6 @@ from ..database.schemas import LoginFrame
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ws"])
 
-_ph = PasswordHasher()
-# Pre-hashed dummy used to equalise timing when the username does not exist,
-# preventing username enumeration via response-time differences.
-_DUMMY_HASH = _ph.hash("dummy")
 _MAX_MESSAGE_LEN = 4096
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -29,11 +24,9 @@ def _verify_credentials(username: str, password: str) -> bool:
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.username == username).first()
-        target_hash = user.password_hash if user is not None else _DUMMY_HASH
-        _ph.verify(target_hash, password)
+        target_hash = user.password_hash if user is not None else DUMMY_HASH
+        verify_password(password, target_hash)
         return user is not None
-    except (VerifyMismatchError, VerificationError, InvalidHashError):
-        return False
     finally:
         db.close()
 
