@@ -16,11 +16,11 @@ public:
 
     SSL_CTX* ctx() const;
 
-    // Call after SSL_connect(). Returns true if cert is new (pinned now)
-    // or matches the already-pinned fingerprint for this host.
-    // Throws std::runtime_error on mismatch (possible MITM).
-    bool verify_and_pin(SSL* ssl, const std::string& host,
-                        const std::string& pinned_fp);
+    // Call after SSL_connect(). Validates the cert chain + hostname, then
+    // checks TOFU: if pinned_fp is non-empty, throws on mismatch (possible MITM).
+    // Returns the observed SHA-256 fingerprint; caller saves it if pinned_fp was empty.
+    std::string verify_and_pin(SSL* ssl, const std::string& host,
+                               const std::string& pinned_fp);
 
     static std::string cert_sha256_fingerprint(X509* cert);
 
