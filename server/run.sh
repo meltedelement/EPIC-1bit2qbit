@@ -112,8 +112,8 @@ start_backend() {
     fi
     ok "Backend started (PID $new_pid)"
     printf "    internal  http://127.0.0.1:8443\n"
-    printf "    external  http://1bit2qbit.theburkenator.com/backend/\n"
-    printf "    api docs  http://1bit2qbit.theburkenator.com/backend/docs\n"
+    printf "    external  https://1bit2qbit.theburkenator.com/backend/\n"
+    printf "    api docs  https://1bit2qbit.theburkenator.com/backend/docs\n"
 }
 
 start_verify() {
@@ -130,7 +130,7 @@ start_verify() {
     else
         sudo systemctl start nginx
     fi
-    ok "Verify started → http://1bit2qbit.theburkenator.com/verify/"
+    ok "Verify started → https://1bit2qbit.theburkenator.com/verify/"
 }
 
 stop_backend() {
@@ -227,14 +227,14 @@ cmd_status() {
     local pid
     if pid=$(backend_pid 2>/dev/null); then
         printf "%-10s  ${GREEN}%-14s${RESET}  %s\n" \
-            "backend" "running ($pid)" "http://1bit2qbit.theburkenator.com/backend/"
+            "backend" "running ($pid)" "https://1bit2qbit.theburkenator.com/backend/"
     else
         printf "%-10s  ${RED}%-14s${RESET}\n" "backend" "stopped"
     fi
 
     if nginx_running; then
         printf "%-10s  ${GREEN}%-14s${RESET}  %s\n" \
-            "verify" "running" "http://1bit2qbit.theburkenator.com/verify/"
+            "verify" "running" "https://1bit2qbit.theburkenator.com/verify/"
     else
         printf "%-10s  ${RED}%-14s${RESET}\n" "verify" "stopped"
     fi
