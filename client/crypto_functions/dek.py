@@ -10,11 +10,11 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 # which takes 3 seconds on a 2 GHz CPU using 2 cores — Argon2id with 4 lanes
 # and 6 GiB of RAM."  t=1 is sufficient because a single pass over 6 GiB of
 # memory already meets the 3-second target; increasing t further would exceed it.
-_ARGON2_TIME_COST   = 1
+_ARGON2_TIME_COST = 1
 _ARGON2_MEMORY_COST = 6_291_456  # 6 GiB in KiB (6 * 1024 * 1024)
 _ARGON2_PARALLELISM = 4
-_ARGON2_HASH_LEN    = 32
-_ARGON2_SALT_LEN    = 32
+_ARGON2_HASH_LEN = 32
+_ARGON2_SALT_LEN = 32
 
 _AES_NONCE_LEN = 12
 
@@ -103,7 +103,9 @@ def rotate_dek(old_pin: str, new_pin: str, username: str, encrypted_dek: dict) -
     try:
         dek = AESGCM(old_kek).decrypt(nonce, ciphertext, username.encode())
     except InvalidTag as exc:
-        raise ValueError("DEK decryption failed — incorrect old PIN or corrupted key store") from exc
+        raise ValueError(
+            "DEK decryption failed — incorrect old PIN or corrupted key store"
+        ) from exc
 
     new_salt = os.urandom(_ARGON2_SALT_LEN)
     new_kek = _derive_kek(new_pin, new_salt)

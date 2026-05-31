@@ -27,9 +27,6 @@ import os
 import sys
 
 import x3dh
-from doubleratchet import EncryptedMessage, Header as RatchetHeader
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
 from crypto_functions import (
     DoubleRatchet,
     create_dek,
@@ -38,8 +35,12 @@ from crypto_functions import (
     rotate_dek,
     unlock_dek,
 )
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from doubleratchet import EncryptedMessage
+from doubleratchet import Header as RatchetHeader
 
 _session_dek: bytes | None = None
+
 
 def _b64(data: bytes) -> str:
     return base64.b64encode(data).decode()
@@ -56,8 +57,8 @@ def _require_dek() -> bytes:
 
 
 # x3dh State encryption — wraps library state as an AES-256-GCM blob for C++ storage
-_STATE_AAD  = b"X3DH_STATE"
-_NONCE_LEN  = 12
+_STATE_AAD = b"X3DH_STATE"
+_NONCE_LEN = 12
 
 from crypto_functions.x3dh_init import (
     HASH_FUNCTION,
@@ -98,10 +99,11 @@ def _unwrap_state(encrypted: dict, dek: bytes) -> x3dh.State:
 # x3dh Bundle / Header serialisation — translates library namedtuples to JSON
 # ---------------------------------------------------------------------------
 
+
 def _serialize_bundle(bundle: x3dh.Bundle) -> dict:
     return {
-        "identity_key":       _b64(bundle.identity_key),
-        "signed_pre_key":     _b64(bundle.signed_pre_key),
+        "identity_key": _b64(bundle.identity_key),
+        "signed_pre_key": _b64(bundle.signed_pre_key),
         "signed_pre_key_sig": _b64(bundle.signed_pre_key_sig),
         "pre_keys": [_b64(pk) for pk in bundle.pre_keys],
     }
@@ -118,8 +120,8 @@ def _deserialize_bundle(data: dict) -> x3dh.Bundle:
 
 def _serialize_x3dh_header(header: x3dh.Header) -> dict:
     return {
-        "identity_key":   _b64(header.identity_key),
-        "ephemeral_key":  _b64(header.ephemeral_key),
+        "identity_key": _b64(header.identity_key),
+        "ephemeral_key": _b64(header.ephemeral_key),
         "signed_pre_key": _b64(header.signed_pre_key),
         "pre_key": _b64(header.pre_key) if header.pre_key else None,
     }
@@ -137,6 +139,7 @@ def _deserialize_x3dh_header(data: dict) -> x3dh.Header:
 # ---------------------------------------------------------------------------
 # Double Ratchet message serialisation
 # ---------------------------------------------------------------------------
+
 
 def _serialize_ratchet_message(msg: EncryptedMessage) -> dict:
     return {
@@ -164,6 +167,7 @@ def _deserialize_ratchet_message(data: dict) -> EncryptedMessage:
 # Key encryption handlers (DEK lifecycle)
 # ---------------------------------------------------------------------------
 
+
 def _handle_create_dek(p: dict) -> dict:
     global _session_dek
     result = create_dek(p["pin"], p["username"])
@@ -178,14 +182,15 @@ def _handle_unlock_dek(p: dict) -> dict:
 
 
 def _handle_rotate_dek(p: dict) -> dict:
-    return {"encrypted_dek": rotate_dek(
-        p["old_pin"], p["new_pin"], p["username"], p["encrypted_dek"]
-    )}
+    return {
+        "encrypted_dek": rotate_dek(p["old_pin"], p["new_pin"], p["username"], p["encrypted_dek"])
+    }
 
 
 # ---------------------------------------------------------------------------
 # X3DH key management handlers
 # ---------------------------------------------------------------------------
+
 
 def _handle_create_state(p: dict) -> dict:
     dek = _require_dek()
@@ -244,7 +249,9 @@ def _handle_get_shared_secret_active(p: dict) -> dict:
 def _handle_get_shared_secret_passive(p: dict) -> dict:
     dek = _require_dek()
     state = _unwrap_state(p["encrypted_state"], dek)
-    shared_secret, ad, spk_pair = state.get_shared_secret_passive(_deserialize_x3dh_header(p["header"]))
+    shared_secret, ad, spk_pair = state.get_shared_secret_passive(
+        _deserialize_x3dh_header(p["header"])
+    )
     return {
         "shared_secret": _b64(shared_secret),
         "associated_data": _b64(ad),
@@ -260,11 +267,10 @@ def _handle_delete_hidden_pre_keys(p: dict) -> dict:
     return {"encrypted_state": _wrap_state(state, dek)}
 
 
-
-
 # ---------------------------------------------------------------------------
 # Double Ratchet messaging handlers
 # ---------------------------------------------------------------------------
+
 
 def _handle_encrypt_initial_message(p: dict) -> dict:
     async def run():
@@ -275,6 +281,7 @@ def _handle_encrypt_initial_message(p: dict) -> dict:
             associated_data=_unb64(p["associated_data"]),
             **dr_configuration,
         )
+
     dr, msg = asyncio.run(run())
     return {"encrypted_message": _serialize_ratchet_message(msg), "ratchet_state": dr.json}
 
@@ -290,6 +297,7 @@ def _handle_decrypt_initial_message(p: dict) -> dict:
             associated_data=_unb64(p["associated_data"]),
             **dr_configuration,
         )
+
     dr, plaintext = asyncio.run(run())
     return {"plaintext": _b64(plaintext), "ratchet_state": dr.json}
 
@@ -299,6 +307,7 @@ def _handle_encrypt_message(p: dict) -> dict:
 
     async def run():
         return await dr.encrypt_message(_unb64(p["message"]), _unb64(p["associated_data"]))
+
     msg = asyncio.run(run())
     return {"encrypted_message": _serialize_ratchet_message(msg), "ratchet_state": dr.json}
 
@@ -309,6 +318,7 @@ def _handle_decrypt_message(p: dict) -> dict:
 
     async def run():
         return await dr.decrypt_message(msg, _unb64(p["associated_data"]))
+
     plaintext = asyncio.run(run())
     return {"plaintext": _b64(plaintext), "ratchet_state": dr.json}
 
@@ -318,21 +328,21 @@ def _handle_decrypt_message(p: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 _DISPATCH: dict[str, callable] = {
-    "create_dek":  _handle_create_dek,
-    "unlock_dek":  _handle_unlock_dek,
-    "rotate_dek":  _handle_rotate_dek,
-    "create_state":              _handle_create_state,
-    "get_bundle":                _handle_get_bundle,
-    "generate_pre_keys":         _handle_generate_pre_keys,
-    "rotate_signed_pre_key":     _handle_rotate_signed_pre_key,
-    "get_num_pre_keys":          _handle_get_num_pre_keys,
-    "get_shared_secret_active":  _handle_get_shared_secret_active,
+    "create_dek": _handle_create_dek,
+    "unlock_dek": _handle_unlock_dek,
+    "rotate_dek": _handle_rotate_dek,
+    "create_state": _handle_create_state,
+    "get_bundle": _handle_get_bundle,
+    "generate_pre_keys": _handle_generate_pre_keys,
+    "rotate_signed_pre_key": _handle_rotate_signed_pre_key,
+    "get_num_pre_keys": _handle_get_num_pre_keys,
+    "get_shared_secret_active": _handle_get_shared_secret_active,
     "get_shared_secret_passive": _handle_get_shared_secret_passive,
-    "delete_hidden_pre_keys":    _handle_delete_hidden_pre_keys,
-    "encrypt_initial_message":   _handle_encrypt_initial_message,
-    "decrypt_initial_message":   _handle_decrypt_initial_message,
-    "encrypt_message":           _handle_encrypt_message,
-    "decrypt_message":           _handle_decrypt_message,
+    "delete_hidden_pre_keys": _handle_delete_hidden_pre_keys,
+    "encrypt_initial_message": _handle_encrypt_initial_message,
+    "decrypt_initial_message": _handle_decrypt_initial_message,
+    "encrypt_message": _handle_encrypt_message,
+    "decrypt_message": _handle_decrypt_message,
 }
 
 
