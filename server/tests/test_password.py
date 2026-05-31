@@ -1,5 +1,5 @@
-from backend.crypto.password import hash_password, needs_rehash, verify_password
 from argon2 import PasswordHasher
+from backend.crypto.password import hash_password, needs_rehash, verify_password
 
 _PASSWORD = "dont-roll-your-own-crypto"
 
