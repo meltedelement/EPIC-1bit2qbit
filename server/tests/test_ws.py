@@ -2,12 +2,11 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+from backend.crypto.password import hash_password
+from backend.routes.ws import _verify_credentials, router
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
-
-from backend.crypto.password import hash_password
-from backend.routes.ws import _verify_credentials, router
 
 _app = FastAPI()
 _app.include_router(router)
