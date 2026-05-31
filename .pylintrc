@@ -1,5 +1,5 @@
 [MAIN]
-py-version = 3.8
+py-version = 3.10
 
 [FORMAT]
 max-line-length = 100
@@ -34,3 +34,5 @@ disable =
     C0116,  # missing-function-docstring
     R0903,  # too-few-public-methods (often fine for data classes)
     E1120,  # no-value-for-parameter (false positive on web3.py static methods)
+    W0603,  # global-statement (used for subprocess-level mutable state)
+    W0718,  # broad-exception-caught (intentional at subprocess dispatch boundary)

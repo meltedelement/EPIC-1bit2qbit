@@ -44,10 +44,13 @@ def create_dek(pin: str, username: str) -> dict:
     Generate a fresh DEK at registration. Called once per account on this device.
 
     Returns:
-        encrypted_dek  — { salt, nonce, ciphertext } all base64; store in DB via C++ layer
-        dek_raw        — base64 raw DEK for this session; keep in subprocess memory, never write to disk
+        encrypted_dek  — { salt, nonce, ciphertext } all base64;
+                          store in DB via C++ layer
+        dek_raw        — base64 raw DEK for this session;
+                          keep in subprocess memory, never write to disk
 
-    Username is bound as AAD so the same encrypted blob cannot be transplanted to a different account.
+    Username is bound as AAD so the same encrypted blob cannot be
+    transplanted to a different account.
     """
     salt = os.urandom(_ARGON2_SALT_LEN)
     dek = os.urandom(32)

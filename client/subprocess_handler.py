@@ -10,7 +10,7 @@ implementation uses stdin/stdout — equivalent semantics for a synchronous
 request/response pattern, portable across Windows and Linux, and simpler for the
 C++ spawn-and-communicate pattern. Revisit if bidirectional streaming is needed.
 
-Session state: the subprocess holds the raw DEK in memory after unlock_dek or
+In-memory state: the subprocess holds the raw DEK in memory after unlock_dek or
 create_dek. All other state (x3dh state blob, ratchet state) is owned by the C++
 layer and passed in with each call.
 
@@ -35,13 +35,23 @@ from crypto_functions import (
     rotate_dek,
     unlock_dek,
 )
+from crypto_functions.x3dh_init import STATE_KWARGS
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from doubleratchet import EncryptedMessage
 from doubleratchet import Header as RatchetHeader
 
-_session_dek: bytes | None = None
+_active_dek: bytes | None = None  # pylint: disable=invalid-name
+_STATE_AAD = b"X3DH_STATE"
+_NONCE_LEN = 12
 
 
+def _require_dek() -> bytes:
+    if _active_dek is None:
+        raise RuntimeError("No active session — call unlock_dek or create_dek first")
+    return _active_dek
+
+
+# Codec helpers
 def _b64(data: bytes) -> str:
     return base64.b64encode(data).decode()
 
@@ -50,26 +60,7 @@ def _unb64(s: str) -> bytes:
     return base64.b64decode(s)
 
 
-def _require_dek() -> bytes:
-    if _session_dek is None:
-        raise RuntimeError("No active session — call unlock_dek or create_dek first")
-    return _session_dek
-
-
-# x3dh State encryption — wraps library state as an AES-256-GCM blob for C++ storage
-_STATE_AAD = b"X3DH_STATE"
-_NONCE_LEN = 12
-
-from crypto_functions.x3dh_init import (
-    HASH_FUNCTION,
-    IDENTITY_KEY_FORMAT,
-    INFO,
-    OPK_REFILL_TARGET,
-    OPK_REFILL_THRESHOLD,
-    SIGNED_PRE_KEY_ROTATION_PERIOD,
-)
-
-
+# x3DH state encryption — wraps library state as an AES-256-GCM blob for C++ storage
 def _wrap_state(state: x3dh.State, dek: bytes) -> dict:
     state_bytes = json.dumps(state.json).encode()
     nonce = os.urandom(_NONCE_LEN)
@@ -83,23 +74,11 @@ def _unwrap_state(encrypted: dict, dek: bytes) -> x3dh.State:
         _unb64(encrypted["ciphertext"]),
         _STATE_AAD,
     )
-    state, _ = x3dh.State.from_json(
-        json.loads(state_bytes.decode()),
-        identity_key_format=IDENTITY_KEY_FORMAT,
-        hash_function=HASH_FUNCTION,
-        info=INFO,
-        signed_pre_key_rotation_period=SIGNED_PRE_KEY_ROTATION_PERIOD,
-        pre_key_refill_threshold=OPK_REFILL_THRESHOLD,
-        pre_key_refill_target=OPK_REFILL_TARGET,
-    )
+    state, _ = x3dh.State.from_json(json.loads(state_bytes.decode()), **STATE_KWARGS)
     return state
 
 
-# ---------------------------------------------------------------------------
-# x3dh Bundle / Header serialisation — translates library namedtuples to JSON
-# ---------------------------------------------------------------------------
-
-
+# x3DH bundle / header serialisation — translates library namedtuples to JSON
 def _serialize_bundle(bundle: x3dh.Bundle) -> dict:
     return {
         "identity_key": _b64(bundle.identity_key),
@@ -136,11 +115,7 @@ def _deserialize_x3dh_header(data: dict) -> x3dh.Header:
     )
 
 
-# ---------------------------------------------------------------------------
 # Double Ratchet message serialisation
-# ---------------------------------------------------------------------------
-
-
 def _serialize_ratchet_message(msg: EncryptedMessage) -> dict:
     return {
         "header": {
@@ -163,21 +138,17 @@ def _deserialize_ratchet_message(data: dict) -> EncryptedMessage:
     )
 
 
-# ---------------------------------------------------------------------------
-# Key encryption handlers (DEK lifecycle)
-# ---------------------------------------------------------------------------
-
-
+# DEK lifecycle handlers
 def _handle_create_dek(p: dict) -> dict:
-    global _session_dek
+    global _active_dek
     result = create_dek(p["pin"], p["username"])
-    _session_dek = _unb64(result["dek_raw"])
+    _active_dek = _unb64(result["dek_raw"])
     return {"encrypted_dek": result["encrypted_dek"]}
 
 
 def _handle_unlock_dek(p: dict) -> dict:
-    global _session_dek
-    _session_dek = _unb64(unlock_dek(p["pin"], p["username"], p["encrypted_dek"]))
+    global _active_dek
+    _active_dek = _unb64(unlock_dek(p["pin"], p["username"], p["encrypted_dek"]))
     return {}
 
 
@@ -187,12 +158,8 @@ def _handle_rotate_dek(p: dict) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# X3DH key management handlers
-# ---------------------------------------------------------------------------
-
-
-def _handle_create_state(p: dict) -> dict:
+# x3DH handlers
+def _handle_create_state(_: dict) -> dict:
     dek = _require_dek()
     state = create_state()
     return {
@@ -220,7 +187,7 @@ def _handle_generate_pre_keys(p: dict) -> dict:
 def _handle_rotate_signed_pre_key(p: dict) -> dict:
     dek = _require_dek()
     state = _unwrap_state(p["encrypted_state"], dek)
-    state.rotate_signed_pre_key(force=True)
+    state.rotate_signed_pre_key()
     return {
         "encrypted_state": _wrap_state(state, dek),
         "bundle": _serialize_bundle(state.bundle),
@@ -267,11 +234,7 @@ def _handle_delete_hidden_pre_keys(p: dict) -> dict:
     return {"encrypted_state": _wrap_state(state, dek)}
 
 
-# ---------------------------------------------------------------------------
-# Double Ratchet messaging handlers
-# ---------------------------------------------------------------------------
-
-
+# Double Ratchet handlers
 def _handle_encrypt_initial_message(p: dict) -> dict:
     async def run():
         return await DoubleRatchet.encrypt_initial_message(
@@ -323,10 +286,7 @@ def _handle_decrypt_message(p: dict) -> dict:
     return {"plaintext": _b64(plaintext), "ratchet_state": dr.json}
 
 
-# ---------------------------------------------------------------------------
 # Dispatch table and main loop
-# ---------------------------------------------------------------------------
-
 _DISPATCH: dict[str, callable] = {
     "create_dek": _handle_create_dek,
     "unlock_dek": _handle_unlock_dek,
@@ -352,7 +312,7 @@ def _process(request: dict) -> dict:
         return {"error": f"Unknown method: {method!r}"}
     try:
         return {"result": _DISPATCH[method](request.get("params", {}))}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {"error": str(exc)}
 
 
