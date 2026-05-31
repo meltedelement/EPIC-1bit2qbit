@@ -1,33 +1,47 @@
 #pragma once
 #include <cstdint>
+#include <optional>
 #include <string>
 
 constexpr int64_t EDIT_WINDOW_MS = 15LL * 60 * 1000;
 
-// Plaintext content — serialized to JSON, then encrypted into EncryptedPayload
-struct MessageContent {
-    std::string sender_id;
-    std::string body;
+// Matches subprocess_handler _serialize_ratchet_message
+struct RatchetHeader {
+    std::string ratchet_pub;
+    uint32_t    sending_chain_length{0};
+    uint32_t    previous_sending_chain_length{0};
 };
 
-// Opaque blob the server forwards but cannot read
+// Matches subprocess_handler _serialize_x3dh_header — only on first message to a peer
+struct X3DHHeader {
+    std::string                identity_key;    // base64 sender IK — authenticates sender
+    std::string                ephemeral_key;   // base64
+    std::string                signed_pre_key;  // base64 recipient SPK used
+    std::optional<std::string> pre_key;         // base64 OPK used, or nullopt
+};
+
+// Wire payload — forwarded opaquely by the server.
+// x3dh_header present only on the first message of a new conversation.
 struct EncryptedPayload {
-    std::string ciphertext;  // base64 AES-256-GCM ciphertext of serialized MessageContent
-    std::string nonce;       // base64 96-bit GCM nonce
+    RatchetHeader             ratchet_header;
+    std::string               ciphertext;   // base64 Double Ratchet ciphertext
+    std::optional<X3DHHeader> x3dh_header;
 };
 
-// Server-visible routing envelope
+// Routing envelope — only recipient is set by the sender; id and timestamp_ms
+// are assigned by the server on receipt.
 struct MessageEnvelope {
     uint64_t         id{0};
     std::string      recipient;
-    int64_t          timestamp_ms{0};  // server-assigned on receipt
+    int64_t          timestamp_ms{0};
     EncryptedPayload payload;
 };
 
-// Client-side decrypted view, populated after CryptoProxy processes an envelope
+// Decrypted view stored locally and rendered in the TUI.
 struct Message {
     uint64_t    id{0};
-    std::string sender_id;
+    std::string peer;          // the other party in the conversation
+    std::string recipient;     // from envelope
     int64_t     timestamp_ms{0};
     std::string body;
 };
