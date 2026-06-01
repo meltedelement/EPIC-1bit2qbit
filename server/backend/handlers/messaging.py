@@ -31,26 +31,32 @@ async def handle_send_message(frame: SendMessageFrame, ctx: WsContext) -> None:
         recipient = db.scalar(select(User).where(User.username == frame.recipient))
         if recipient is not None:
             recipient_found = True
-            db.add(BlockchainMessageQueue(
-                mid=frame.mid,
-                sender_username=ctx.username,
-                recipient_username=frame.recipient,
-                ciphertext=frame.ciphertext,
-                created_at=now,
-                edit_deadline=edit_deadline,
-            ))
+            db.add(
+                BlockchainMessageQueue(
+                    mid=frame.mid,
+                    sender_username=ctx.username,
+                    recipient_username=frame.recipient,
+                    ciphertext=frame.ciphertext,
+                    created_at=now,
+                    edit_deadline=edit_deadline,
+                )
+            )
             recipient_ws = ctx.registry.get(frame.recipient)
             if recipient_ws is None:
-                db.add(TTLDeliveryQueue(
-                    recipient_username=frame.recipient,
-                    frame_json=deliver_json,
-                    created_at=now,
-                    expires_at=expires_at,
-                ))
+                db.add(
+                    TTLDeliveryQueue(
+                        recipient_username=frame.recipient,
+                        frame_json=deliver_json,
+                        created_at=now,
+                        expires_at=expires_at,
+                    )
+                )
             db.commit()
 
     if not recipient_found:
-        logger.warning("send_message rejected: unknown recipient=%r sender=%r", frame.recipient, ctx.username)
+        logger.warning(
+            "send_message rejected: unknown recipient=%r sender=%r", frame.recipient, ctx.username
+        )
         await ctx.websocket.send_text(
             ErrorFrame(
                 code="unknown_recipient",
@@ -62,21 +68,27 @@ async def handle_send_message(frame: SendMessageFrame, ctx: WsContext) -> None:
     if recipient_ws is not None:
         try:
             await recipient_ws.send_text(deliver_json)
-            logger.debug("message delivered: mid=%r from=%r to=%r", frame.mid, ctx.username, frame.recipient)
+            logger.debug(
+                "message delivered: mid=%r from=%r to=%r", frame.mid, ctx.username, frame.recipient
+            )
         except Exception:
             # Recipient disconnected between registry check and send.
             # Queue the frame so they receive it on reconnect.
             logger.warning("direct delivery to %r failed, queuing offline", frame.recipient)
             with SessionLocal() as db:
-                db.add(TTLDeliveryQueue(
-                    recipient_username=frame.recipient,
-                    frame_json=deliver_json,
-                    created_at=now,
-                    expires_at=expires_at,
-                ))
+                db.add(
+                    TTLDeliveryQueue(
+                        recipient_username=frame.recipient,
+                        frame_json=deliver_json,
+                        created_at=now,
+                        expires_at=expires_at,
+                    )
+                )
                 db.commit()
     else:
-        logger.debug("message queued offline: mid=%r from=%r to=%r", frame.mid, ctx.username, frame.recipient)
+        logger.debug(
+            "message queued offline: mid=%r from=%r to=%r", frame.mid, ctx.username, frame.recipient
+        )
 
 
 async def drain_offline_queue(ctx: WsContext) -> None:
@@ -94,7 +106,9 @@ async def drain_offline_queue(ctx: WsContext) -> None:
     logger.info("draining offline queue: user=%r count=%d", ctx.username, len(frames))
     for row_id, deliver in frames:
         await ctx.websocket.send_text(deliver.model_dump_json())
-        logger.debug("message delivered: mid=%r from=%r to=%r", deliver.mid, deliver.sender, ctx.username)
+        logger.debug(
+            "message delivered: mid=%r from=%r to=%r", deliver.mid, deliver.sender, ctx.username
+        )
         with SessionLocal() as db:
             db.execute(delete(TTLDeliveryQueue).where(TTLDeliveryQueue.id == row_id))
             db.commit()
