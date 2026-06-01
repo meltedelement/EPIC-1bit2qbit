@@ -69,5 +69,8 @@ struct Message {
 };
 
 inline bool is_editable(int64_t message_timestamp_ms, int64_t now_ms) {
-    return (now_ms - message_timestamp_ms) < EDIT_WINDOW_MS;
+    // Guard against future-dated timestamps (clock skew): a negative delta would
+    // otherwise be < EDIT_WINDOW_MS and wrongly report the message as editable.
+    return now_ms >= message_timestamp_ms &&
+           (now_ms - message_timestamp_ms) < EDIT_WINDOW_MS;
 }

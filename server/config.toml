@@ -2,18 +2,21 @@
 external_host = "https://1bit2qbit.theburkenator.com"
 vm_address    = "200.69.13.70"
 
-[services.web_app]
-internal_port = 80
-
 [services.backend]
-internal_port = 8443
-external_port = 8443
-host          = "0.0.0.0"
+internal_port = 8000
+host          = "127.0.0.1"
 
 # MySQL via Unix socket auth — no password, OS-level auth.
 # Socket path is the Ubuntu default; the API only runs on the team VM.
 [services.backend.db]
 url = "mysql+pymysql://epic@/epic?unix_socket=/var/run/mysqld/mysqld.sock"
+
+[messaging]
+edit_window_minutes = 10
+message_ttl_days    = 30
+
+[blockchain]
+batch_interval_minutes = 5
 
 [logging.stdout]
 enabled     = true
