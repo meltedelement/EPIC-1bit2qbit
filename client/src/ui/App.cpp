@@ -71,7 +71,7 @@ void App::run() {
 
     auto login_form = Container::Vertical({username_input, pin_input, login_btn});
 
-    auto login_renderer = Renderer(login_form, [&] {
+    auto login_renderer = Renderer(login_form, [&]() -> Element {
         return vbox({
             filler(),
             hbox({
@@ -122,7 +122,7 @@ void App::run() {
     auto chat_right  = Container::Horizontal({compose_input, send_btn});
     auto chat_layout = Container::Horizontal({conv_menu, chat_right});
 
-    auto chat_renderer = Renderer(chat_layout, [&] {
+    auto chat_renderer = Renderer(chat_layout, [&]() -> Element {
         // Build message list, auto-scrolling to the latest entry
         Elements msg_els;
         if (!conversations_.empty()) {
@@ -164,7 +164,7 @@ void App::run() {
                 vbox({
                     text("  " + peer_title) | bold,
                     separator(),
-                    vbox(msg_els) | yframe() | flex,
+                    yframe(vbox(msg_els)) | flex,
                     separator(),
                     hbox({
                         text(" > "),
@@ -178,6 +178,6 @@ void App::run() {
     });
 
     // ── Root ──────────────────────────────────────────────────────────────────
-    auto root = Container::Tab({login_renderer, chat_renderer}, &screen_);
+    auto root = Container::Tab(Components{login_renderer, chat_renderer}, &screen_);
     screen.Loop(root);
 }

@@ -77,6 +77,7 @@ target_link_libraries(epic-client PRIVATE
     OpenSSL::Crypto
     Boost::headers          # Boost.Asio is header-only
     Threads::Threads
+    ws2_32
     ftxui::screen
     ftxui::dom
     ftxui::component
