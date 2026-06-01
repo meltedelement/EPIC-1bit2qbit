@@ -5,7 +5,12 @@ from sqlalchemy import select
 
 from ..database.db import SessionLocal
 from ..database.models import KeyBundle, OneTimePreKey
-from ..schemas.ws import ErrorFrame, KeyBundleResponseFrame, PublishKeyBundleFrame, RequestKeyBundleFrame
+from ..schemas.ws import (
+    ErrorFrame,
+    KeyBundleResponseFrame,
+    PublishKeyBundleFrame,
+    RequestKeyBundleFrame,
+)
 from . import WsContext
 
 logger = logging.getLogger(__name__)
@@ -22,24 +27,30 @@ async def handle_publish_key_bundle(frame: PublishKeyBundleFrame, ctx: WsContext
             existing.signed_pre_key_sig = frame.signed_pre_key_sig
             existing.published_at = now
         else:
-            db.add(KeyBundle(
-                owner_username=ctx.username,
-                identity_key=frame.identity_key,
-                signed_pre_key=frame.signed_pre_key,
-                signed_pre_key_sig=frame.signed_pre_key_sig,
-                published_at=now,
-            ))
+            db.add(
+                KeyBundle(
+                    owner_username=ctx.username,
+                    identity_key=frame.identity_key,
+                    signed_pre_key=frame.signed_pre_key,
+                    signed_pre_key_sig=frame.signed_pre_key_sig,
+                    published_at=now,
+                )
+            )
 
         for key_data in frame.one_time_pre_keys:
-            db.add(OneTimePreKey(
-                owner_username=ctx.username,
-                key_data=key_data,
-                created_at=now,
-            ))
+            db.add(
+                OneTimePreKey(
+                    owner_username=ctx.username,
+                    key_data=key_data,
+                    created_at=now,
+                )
+            )
 
         db.commit()
 
-    logger.info("key bundle published: user=%r, otpks=%d", ctx.username, len(frame.one_time_pre_keys))
+    logger.info(
+        "key bundle published: user=%r, otpks=%d", ctx.username, len(frame.one_time_pre_keys)
+    )
 
 
 async def handle_request_key_bundle(frame: RequestKeyBundleFrame, ctx: WsContext) -> None:
@@ -47,7 +58,9 @@ async def handle_request_key_bundle(frame: RequestKeyBundleFrame, ctx: WsContext
     response: KeyBundleResponseFrame | None = None
 
     with SessionLocal() as db:
-        bundle = db.scalar(select(KeyBundle).where(KeyBundle.owner_username == frame.target_username))
+        bundle = db.scalar(
+            select(KeyBundle).where(KeyBundle.owner_username == frame.target_username)
+        )
 
         if bundle is None:
             error = f"no key bundle found for {frame.target_username!r}"

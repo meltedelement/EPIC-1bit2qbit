@@ -62,7 +62,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     if not registry.register(username, websocket):
         await websocket.close(code=4002, reason="already connected")
         return
-    
+
     logger.info("session opened: user=%s", repr(username))
     ctx = WsContext(username=username, websocket=websocket, registry=registry)
     await messaging.drain_offline_queue(ctx)
@@ -91,7 +91,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     await websocket.close(code=4003, reason="too many invalid frames")
                     return
                 await websocket.send_text(
-                    ErrorFrame(code="invalid_frame", detail="frame failed validation").model_dump_json()
+                    ErrorFrame(
+                        code="invalid_frame", detail="frame failed validation"
+                    ).model_dump_json()
                 )
                 continue
 

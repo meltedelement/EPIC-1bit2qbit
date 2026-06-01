@@ -27,9 +27,9 @@ class KeyBundle(Base):
     owner_username: Mapped[str] = mapped_column(
         String(64), ForeignKey("users.username"), unique=True
     )
-    identity_key: Mapped[str] = mapped_column(Text)       # base64 Ed25519 public key
-    signed_pre_key: Mapped[str] = mapped_column(Text)     # base64 signed prekey
-    signed_pre_key_sig: Mapped[str] = mapped_column(Text) # base64 signature over SPK
+    identity_key: Mapped[str] = mapped_column(Text)  # base64 Ed25519 public key
+    signed_pre_key: Mapped[str] = mapped_column(Text)  # base64 signed prekey
+    signed_pre_key_sig: Mapped[str] = mapped_column(Text)  # base64 signature over SPK
     published_at: Mapped[datetime] = mapped_column(DateTime)
 
 
@@ -48,9 +48,7 @@ class OneTimePreKey(Base):
     key_data: Mapped[str] = mapped_column(Text)  # base64 OTPK
     created_at: Mapped[datetime] = mapped_column(DateTime)
 
-    __table_args__ = (
-        Index("ix_otpk_owner", "owner_username"),
-    )
+    __table_args__ = (Index("ix_otpk_owner", "owner_username"),)
 
 
 class BlockchainMessageQueue(Base):
