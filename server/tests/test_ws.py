@@ -6,11 +6,13 @@ from argon2 import PasswordHasher
 from backend.auth.credentials import verify_credentials
 from backend.crypto.password import hash_password
 from backend.routes.ws import router
+from backend.session import SessionRegistry
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 _app = FastAPI()
+_app.state.sessions = SessionRegistry()
 _app.include_router(router)
 _client = TestClient(_app)
 
@@ -104,6 +106,16 @@ class TestWebSocketAuth:
                 with pytest.raises(WebSocketDisconnect) as exc:
                     ws.receive_text()
         assert exc.value.code == 4001
+
+    def test_duplicate_session_closes_4002(self):
+        with patch("backend.auth.credentials.SessionLocal", return_value=_mock_db(_mock_user())):
+            with _client.websocket_connect("/ws") as first:
+                first.send_text(_login_frame())
+                with _client.websocket_connect("/ws") as second:
+                    second.send_text(_login_frame())
+                    with pytest.raises(WebSocketDisconnect) as exc:
+                        second.receive_text()
+                assert exc.value.code == 4002
 
 
 class TestWebSocketMessages:
