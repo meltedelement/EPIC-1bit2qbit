@@ -11,6 +11,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ── System dependencies ────────────────────────────────────────────────────────
 find_package(Threads REQUIRED)
+find_package(OpenSSL REQUIRED)
+find_package(Boost 1.74 REQUIRED)   # header-only; Asio needs no linked component
 
 # ── Fetched dependencies ───────────────────────────────────────────────────────
 include(FetchContent)
@@ -56,6 +58,8 @@ endif()
 set(SOURCES
     src/main.cpp
     src/client/Client.cpp
+    src/connection/Connection.cpp
+    src/connection/TlsContext.cpp
     src/crypto/CryptoProxy.cpp
     src/messaging/Message.cpp
     src/messaging/Conversation.cpp
@@ -69,6 +73,9 @@ add_executable(epic-client ${SOURCES})
 target_include_directories(epic-client PRIVATE src)
 
 target_link_libraries(epic-client PRIVATE
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    Boost::headers          # Boost.Asio is header-only
     Threads::Threads
     ftxui::screen
     ftxui::dom
