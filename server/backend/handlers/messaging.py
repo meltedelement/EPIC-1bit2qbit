@@ -12,6 +12,7 @@ from . import WsContext
 
 logger = logging.getLogger(__name__)
 
+
 def _validate_mid(mid: str, sender: str, recipient: str, now: datetime) -> ErrorFrame | None:
     try:
         parts = mid.split(":")
@@ -30,7 +31,9 @@ def _validate_mid(mid: str, sender: str, recipient: str, now: datetime) -> Error
     edit_window = timedelta(minutes=config.messaging.edit_window_minutes)
     grace = timedelta(seconds=config.messaging.edit_grace_seconds)
     if mid_ts < now - edit_window - grace:
-        return ErrorFrame(code="edit_deadline_passed", detail="edit window has closed for this message")
+        return ErrorFrame(
+            code="edit_deadline_passed", detail="edit window has closed for this message"
+        )
     if mid_ts > now:
         return ErrorFrame(code="invalid_mid", detail="mid timestamp is in the future")
 
@@ -90,7 +93,9 @@ async def handle_send_message(frame: SendMessageFrame, ctx: WsContext) -> None:
                     code="update_not_authorised",
                     detail="update not authorised",
                 )
-            elif now >= existing.edit_deadline + timedelta(seconds=config.messaging.edit_grace_seconds):
+            elif now >= existing.edit_deadline + timedelta(
+                seconds=config.messaging.edit_grace_seconds
+            ):
                 error_frame = ErrorFrame(
                     code="edit_deadline_passed",
                     detail="edit window has closed for this message",
@@ -152,7 +157,9 @@ async def handle_send_message(frame: SendMessageFrame, ctx: WsContext) -> None:
         return
 
     if recipient_ws is not None:
-        await _deliver_or_queue(recipient_ws, deliver_json, recipient_username, now, frame.mid, ctx.username) 
+        await _deliver_or_queue(
+            recipient_ws, deliver_json, recipient_username, now, frame.mid, ctx.username
+        )
 
 
 async def drain_offline_queue(ctx: WsContext) -> None:
