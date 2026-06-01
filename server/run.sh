@@ -18,35 +18,24 @@ PID_DIR="$SCRIPT_DIR/.pids"
 LOG_DIR="$SCRIPT_DIR/logs"
 BACKEND_PID="$PID_DIR/backend.pid"
 WEBAPP_DIST="$SCRIPT_DIR/web-app/dist"
-
-# ── Colours ───────────────────────────────────────────────────────────────────
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
-
-info() { printf "${CYAN}[info]${RESET}  %s\n" "$*"; }
-ok()   { printf "${GREEN}[ok]${RESET}    %s\n" "$*"; }
-warn() { printf "${YELLOW}[warn]${RESET}  %s\n" "$*"; }
-err()  { printf "${RED}[error]${RESET} %s\n" "$*" >&2; }
-die()  { err "$*"; exit 1; }
+NGINX_AVAILABLE=/etc/nginx/sites-available/1bit2qbit
+NGINX_ENABLED=/etc/nginx/sites-enabled/1bit2qbit
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+info() { echo -e "\033[1;34m[INFO]\033[0m  $*"; }
+ok()   { echo -e "\033[1;32m[OK]\033[0m    $*"; }
+warn() { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
+err()  { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; }
+die()  { err "$*"; exit 1; }
 
 activate_venv() {
-    local v
-    for v in .venv venv; do
-        if [[ -f "$SCRIPT_DIR/$v/bin/activate" ]]; then
-            # shellcheck disable=SC1090
-            source "$SCRIPT_DIR/$v/bin/activate"
-            return 0
-        fi
-    done
-    warn "No virtual environment found (.venv/ or venv/) — using system Python"
+    [[ -f "$SCRIPT_DIR/.venv/bin/activate" ]] || die "No virtual environment found — run ./run.sh setup first"
+    source "$SCRIPT_DIR/.venv/bin/activate"
 }
 
 load_env() {
     [[ -f "$SCRIPT_DIR/.env" ]] || return 0
     set -a
-    # shellcheck disable=SC1091
     source "$SCRIPT_DIR/.env"
     set +a
 }
@@ -67,9 +56,17 @@ nginx_running() {
     systemctl is-active --quiet nginx 2>/dev/null
 }
 
+nginx_reload() {
+    if nginx_running; then
+        sudo systemctl reload nginx
+    else
+        sudo systemctl start nginx
+    fi
+}
+
 # Sets DO_BACKEND, DO_VERIFY, and REBUILD_VERIFY based on flags.
-# Defaults to both services if no flags given; REBUILD_VERIFY is only true when
-# --verify is explicitly passed (plain "start" should not trigger a Vite build).
+# REBUILD_VERIFY is false only when --backend is passed alone — every other
+# combination that includes verify should rebuild the frontend.
 parse_flags() {
     DO_BACKEND=false
     DO_VERIFY=false
@@ -86,6 +83,7 @@ parse_flags() {
     if [[ "$saw_flag" == false ]]; then
         DO_BACKEND=true
         DO_VERIFY=true
+        REBUILD_VERIFY=true
     fi
 }
 
@@ -101,22 +99,20 @@ start_backend() {
     mkdir -p "$PID_DIR" "$LOG_DIR"
     activate_venv
     load_env
-
     info "Starting backend…"
     nohup epic-api >> "$LOG_DIR/backend.stdout.log" 2>&1 &
     local new_pid=$!
     echo "$new_pid" > "$BACKEND_PID"
 
-    # Give the process a moment to detect an immediate crash
-    sleep 1
+    sleep 1 # Give the process a moment to detect an immediate crash
     if ! kill -0 "$new_pid" 2>/dev/null; then
         rm -f "$BACKEND_PID"
         die "Backend crashed at startup — check $LOG_DIR/backend.stdout.log"
     fi
     ok "Backend started (PID $new_pid)"
-    printf "    internal  http://127.0.0.1:8000\n"
-    printf "    external  https://1bit2qbit.theburkenator.com/backend/\n"
-    printf "    api docs  https://1bit2qbit.theburkenator.com/backend/docs\n"
+    info "internal  http://127.0.0.1:8000"
+    info "external  https://1bit2qbit.theburkenator.com/backend/"
+    info "api docs  https://1bit2qbit.theburkenator.com/backend/docs"
 }
 
 start_verify() {
@@ -128,18 +124,14 @@ start_verify() {
         ok "Frontend built → web-app/dist/"
     fi
 
-    if [[ ! -f /etc/nginx/sites-available/1bit2qbit ]]; then
+    if [[ ! -f "$NGINX_AVAILABLE" ]]; then
         die "nginx config not installed — run ./run.sh setup first"
     fi
 
     info "Enabling verify site…"
-    sudo ln -sf /etc/nginx/sites-available/1bit2qbit /etc/nginx/sites-enabled/1bit2qbit
+    sudo ln -sf "$NGINX_AVAILABLE" "$NGINX_ENABLED"
     sudo nginx -t
-    if nginx_running; then
-        sudo systemctl reload nginx
-    else
-        sudo systemctl start nginx
-    fi
+    nginx_reload
     ok "Verify started → https://1bit2qbit.theburkenator.com/verify/"
 }
 
@@ -165,9 +157,9 @@ stop_backend() {
 }
 
 stop_verify() {
-    if [[ -L /etc/nginx/sites-enabled/1bit2qbit ]]; then
+    if [[ -L "$NGINX_ENABLED" ]]; then
         info "Disabling verify site…"
-        sudo rm -f /etc/nginx/sites-enabled/1bit2qbit
+        sudo rm -f "$NGINX_ENABLED"
         if nginx_running; then
             sudo systemctl reload nginx
         else
@@ -182,12 +174,7 @@ stop_verify() {
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 cmd_setup() {
-    # Create a virtual environment if neither .venv nor venv exists
-    local venv_found=false
-    for v in .venv venv; do
-        [[ -f "$SCRIPT_DIR/$v/bin/activate" ]] && venv_found=true && break
-    done
-    if [[ "$venv_found" == false ]]; then
+    if [[ ! -f "$SCRIPT_DIR/.venv/bin/activate" ]]; then
         info "Creating Python virtual environment (.venv)…"
         python3 -m venv "$SCRIPT_DIR/.venv"
         ok "Virtual environment created"
@@ -214,15 +201,14 @@ cmd_setup() {
     local tmp
     tmp=$(mktemp)
     sed "s|alias [^;]*/web-app/dist/;|alias $WEBAPP_DIST/;|" "$SCRIPT_DIR/nginx.conf" > "$tmp"
-    sudo cp "$tmp" /etc/nginx/sites-available/1bit2qbit
+    sudo cp "$tmp" $NGINX_AVAILABLE
     rm -f "$tmp"
-    sudo ln -sf /etc/nginx/sites-available/1bit2qbit /etc/nginx/sites-enabled/1bit2qbit
+    sudo ln -sf "$NGINX_AVAILABLE" "$NGINX_ENABLED"
     # Remove the default site so it doesn't conflict on port 80
     sudo rm -f /etc/nginx/sites-enabled/default
     sudo nginx -t
     ok "nginx config installed and validated"
 
-    printf "\n"
     ok "Setup complete — run ./run.sh start to launch all services"
 }
 
@@ -239,30 +225,22 @@ cmd_stop() {
 }
 
 cmd_status() {
-    printf "\n${BOLD}%-10s  %-14s  %s${RESET}\n" "SERVICE" "STATUS" "URL"
-    printf '%.0s─' {1..62}; printf '\n'
-
     local pid
     if pid=$(backend_pid 2>/dev/null); then
-        printf "%-10s  ${GREEN}%-14s${RESET}  %s\n" \
-            "backend" "running ($pid)" "https://1bit2qbit.theburkenator.com/backend/"
+        ok "backend  running ($pid) — https://1bit2qbit.theburkenator.com/backend/"
     else
-        printf "%-10s  ${RED}%-14s${RESET}\n" "backend" "stopped"
+        err "backend  stopped"
     fi
 
-    if nginx_running; then
-        printf "%-10s  ${GREEN}%-14s${RESET}  %s\n" \
-            "verify" "running" "https://1bit2qbit.theburkenator.com/verify/"
+    if [[ -L "$NGINX_ENABLED" ]] && nginx_running; then
+        ok "verify   running — https://1bit2qbit.theburkenator.com/verify/"
     else
-        printf "%-10s  ${RED}%-14s${RESET}\n" "verify" "stopped"
+        err "verify   stopped"
     fi
-
-    printf '%.0s─' {1..62}; printf '\n'
 
     if [[ ! -d "$WEBAPP_DIST" ]]; then
         warn "Frontend not built — run ./run.sh setup"
     fi
-    printf '\n'
 }
 
 cmd_logs() {
