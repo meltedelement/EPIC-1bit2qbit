@@ -21,8 +21,8 @@ public:
     Connection(const Connection&)            = delete;
     Connection& operator=(const Connection&) = delete;
 
-    // Blocking: TCP connect → TLS handshake + TOFU pin → WS upgrade.
-    // pinned_fp: pass the stored fingerprint from MessageStore, or "" for first use.
+    // Blocking: TCP connect → TLS handshake (CA-verified) + cert pin → WS upgrade.
+    // pinned_fp: pass the stored fingerprint from MessageStore, or "" to pin on first connect.
     // After connect(), call cert_fingerprint() to get the observed fingerprint;
     // if pinned_fp was empty, save it to MessageStore.
     void connect(const std::string& pinned_fp = "");

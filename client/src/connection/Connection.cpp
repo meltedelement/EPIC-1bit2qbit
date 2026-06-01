@@ -239,6 +239,15 @@ std::string Connection::ws_decode_frame() {
 
 // ─── Read loop ───────────────────────────────────────────────────────────────
 
+// Threading note: read_loop() calls SSL_read on read_thread_ while send_text()
+// calls SSL_write on the main thread. OpenSSL permits one concurrent reader and
+// one concurrent writer on the same SSL* in steady state. The one exception is a
+// read that must internally write: TLS 1.2 renegotiation (impossible here — we
+// pin to TLS 1.3 in TlsContext) and a TLS 1.3 KeyUpdate from the server, which
+// can race the main-thread SSL_write. Only the authenticated server can trigger
+// this, the window is microseconds, and the typical outcome is a dropped
+// connection. The full fix (single-threaded non-blocking I/O) is tracked
+// separately; until then this constraint is accepted deliberately.
 void Connection::read_loop() {
     while (running_) {
         try {
