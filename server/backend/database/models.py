@@ -74,7 +74,9 @@ class TTLDeliveryQueue(Base):
     The receiver drains all frames in created_at order on reconnect; the client
     reconciles state (original → edit/delete) locally.
 
-    Rows are hard-deleted by the TTL daemon once expires_at passes.
+    Rows are hard-deleted in one of two ways:
+      - immediately on successful delivery when the recipient reconnects
+      - by the TTL daemon once expires_at passes, for frames never delivered
     """
 
     __tablename__ = "ttl_delivery_queue"
@@ -84,11 +86,10 @@ class TTLDeliveryQueue(Base):
     frame_json: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
-    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     __table_args__ = (
-        # Offline drain: WHERE recipient_username = ? AND delivered_at IS NULL ORDER BY created_at
-        Index("ix_tdq_recipient_undelivered", "recipient_username", "delivered_at"),
-        # TTL daemon: WHERE expires_at < NOW() AND delivered_at IS NULL
+        # Offline drain: WHERE recipient_username = ? ORDER BY created_at
+        Index("ix_tdq_recipient", "recipient_username"),
+        # TTL daemon: WHERE expires_at < NOW()
         Index("ix_tdq_expires", "expires_at"),
     )
