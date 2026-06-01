@@ -16,9 +16,9 @@ class User(Base):
 
 class KeyBundle(Base):
     """
-    Stores each user's published X3DH key bundle as an opaque JSON blob.
-    One bundle per user — publishing a new bundle overwrites the existing one.
-    The server validates the bundle structure on publish but never interprets key material.
+    Stores a user's long-lived X3DH keys: identity key, signed prekey, and SPK signature.
+    One row per user — overwritten on each signed prekey rotation (every 7 days).
+    The server stores but never interprets key material.
     """
 
     __tablename__ = "key_bundles"
@@ -27,8 +27,30 @@ class KeyBundle(Base):
     owner_username: Mapped[str] = mapped_column(
         String(64), ForeignKey("users.username"), unique=True
     )
-    bundle_data: Mapped[str] = mapped_column(Text)  # JSON: IK, SPK, OPKs, signature, TTL
+    identity_key: Mapped[str] = mapped_column(Text)       # base64 Ed25519 public key
+    signed_pre_key: Mapped[str] = mapped_column(Text)     # base64 signed prekey
+    signed_pre_key_sig: Mapped[str] = mapped_column(Text) # base64 signature over SPK
     published_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class OneTimePreKey(Base):
+    """
+    Pool of one-time prekeys (OTPKs) for a user's X3DH key bundle.
+    Each row is one OTPK. Rows are deleted individually as they are consumed
+    by requesters — one OTPK is popped per key bundle request.
+    The client replenishes the pool when it drops below threshold.
+    """
+
+    __tablename__ = "one_time_pre_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_username: Mapped[str] = mapped_column(String(64), ForeignKey("users.username"))
+    key_data: Mapped[str] = mapped_column(Text)  # base64 OTPK
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+    __table_args__ = (
+        Index("ix_otpk_owner", "owner_username"),
+    )
 
 
 class BlockchainMessageQueue(Base):
