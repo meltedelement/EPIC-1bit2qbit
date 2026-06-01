@@ -201,6 +201,10 @@ void Client::publish_key_bundle() {
         if (encrypted_state_.is_null()) return;  // registered on another device
         bundle = crypto_->get_bundle(encrypted_state_);
     }
+    send_key_bundle(bundle);
+}
+
+void Client::send_key_bundle(const nlohmann::json& bundle) {
     const nlohmann::json& otpks = bundle.at("pre_keys");
     if (otpks.empty()) return;  // server requires at least one one-time pre-key
 
@@ -263,6 +267,9 @@ void Client::on_deliver_message(const nlohmann::json& frame) {
 
             const nlohmann::json ss = crypto_->get_shared_secret_passive(encrypted_state_, x3dh);
             encrypted_state_ = ss.at("encrypted_state");
+            // The passive agreement consumed one of our one-time pre keys; re-publish
+            // the refreshed bundle so the server drops the spent key and sees the refill.
+            if (ss.contains("bundle")) send_key_bundle(ss.at("bundle"));
             const nlohmann::json dec = crypto_->decrypt_initial_message(
                 ss.at("shared_secret").get<std::string>(),
                 ss.at("own_ratchet_priv").get<std::string>(), dr,

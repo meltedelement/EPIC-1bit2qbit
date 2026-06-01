@@ -40,6 +40,10 @@ private:
     // Network helpers
     void send_login_frame(const std::string& username, const std::string& password);
     void publish_key_bundle();
+    // Sends a publish_key_bundle frame for an already-fetched bundle. Does not lock
+    // or call crypto_, so it is safe to invoke while mutex_ is held (e.g. from the
+    // read thread after a passive X3DH consumes a one-time pre key).
+    void send_key_bundle(const nlohmann::json& bundle);
 
     // Crypto/session helpers. All assume mutex_ is held by the caller, since they
     // touch crypto_ (not thread-safe) and the conversation/state maps.
