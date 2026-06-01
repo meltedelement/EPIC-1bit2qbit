@@ -9,7 +9,8 @@
 #include <openssl/ssl.h>
 #include "connection/TlsContext.h"
 
-using MessageCallback = std::function<void(std::string)>;
+using MessageCallback    = std::function<void(std::string)>;
+using DisconnectCallback = std::function<void(std::string reason)>;
 
 // Manages the full connection pipeline: TCP (Boost.Asio) → TLS (raw OpenSSL)
 // → WebSocket upgrade → framed message I/O.
@@ -29,7 +30,14 @@ public:
     void disconnect();
 
     void send_text(const std::string& payload);
-    void on_message(MessageCallback cb);
+
+    // Callbacks. Threading contract: both fire on the internal read thread, NOT
+    // the caller's thread. Set them BEFORE connect() — the members are not
+    // synchronized and the read thread starts inside connect(). The callback body
+    // must not touch non-thread-safe state directly (FTXUI is not thread-safe);
+    // marshal the work onto the UI event loop.
+    void on_message(MessageCallback cb);        // fires per received message
+    void on_disconnect(DisconnectCallback cb);  // fires once on unexpected drop, with reason
 
     bool        is_connected() const;
     std::string cert_fingerprint() const;  // observed server cert fingerprint
@@ -58,6 +66,7 @@ private:
     SSL*                              ssl_{nullptr};
     std::string                       server_cert_fp_;
     MessageCallback                   on_message_cb_;
+    DisconnectCallback                on_disconnect_cb_;
     std::atomic<bool>                 connected_{false};
     std::atomic<bool>                 running_{false};
     std::thread                       read_thread_;

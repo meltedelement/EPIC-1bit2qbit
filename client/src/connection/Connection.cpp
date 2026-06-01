@@ -95,6 +95,7 @@ bool        Connection::is_connected()    const { return connected_; }
 std::string Connection::cert_fingerprint() const { return server_cert_fp_; }
 
 void Connection::on_message(MessageCallback cb) { on_message_cb_ = std::move(cb); }
+void Connection::on_disconnect(DisconnectCallback cb) { on_disconnect_cb_ = std::move(cb); }
 
 // ─── TCP ─────────────────────────────────────────────────────────────────────
 
@@ -346,10 +347,14 @@ void Connection::read_loop() {
         try {
             std::string msg = ws_decode_frame();
             if (on_message_cb_) on_message_cb_(std::move(msg));
-        } catch (const std::exception&) {
-            // Connection closed or error — exit loop and mark disconnected
+        } catch (const std::exception& e) {
+            // Connection closed or error — exit loop and mark disconnected.
+            // exchange() distinguishes an unexpected drop (running_ was still
+            // true) from a caller-initiated disconnect() (already set false);
+            // only the former notifies. The callback runs on this read thread.
             connected_ = false;
-            running_   = false;
+            if (running_.exchange(false) && on_disconnect_cb_)
+                on_disconnect_cb_(e.what());
         }
     }
 }
