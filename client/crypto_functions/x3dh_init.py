@@ -1,5 +1,7 @@
 import x3dh
 
+from crypto_functions.x3dh_state import X3DHState
+
 IDENTITY_KEY_FORMAT = x3dh.IdentityKeyFormat.ED_25519
 HASH_FUNCTION = x3dh.HashFunction.SHA_256
 INFO = b"EPIC"
@@ -18,6 +20,6 @@ STATE_KWARGS = {
 }
 
 
-def create_state() -> x3dh.State:
+def create_state() -> X3DHState:
     """Create a new X3DH state at registration."""
-    return x3dh.State.create(**STATE_KWARGS)
+    return X3DHState.create(**STATE_KWARGS)

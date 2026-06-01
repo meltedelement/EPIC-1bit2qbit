@@ -36,6 +36,7 @@ from crypto_functions import (
     unlock_dek,
 )
 from crypto_functions.x3dh_init import STATE_KWARGS
+from crypto_functions.x3dh_state import X3DHState
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from doubleratchet import EncryptedMessage
 from doubleratchet import Header as RatchetHeader
@@ -74,7 +75,7 @@ def _unwrap_state(encrypted: dict, dek: bytes) -> x3dh.State:
         _unb64(encrypted["ciphertext"]),
         _STATE_AAD,
     )
-    state, _ = x3dh.State.from_json(json.loads(state_bytes.decode()), **STATE_KWARGS)
+    state, _ = X3DHState.from_json(json.loads(state_bytes.decode()), **STATE_KWARGS)
     return state
 
 
@@ -203,7 +204,9 @@ def _handle_get_num_pre_keys(p: dict) -> dict:
 def _handle_get_shared_secret_active(p: dict) -> dict:
     dek = _require_dek()
     state = _unwrap_state(p["encrypted_state"], dek)
-    shared_secret, ad, header = state.get_shared_secret_active(_deserialize_bundle(p["bob_bundle"]))
+    shared_secret, ad, header = asyncio.run(
+        state.get_shared_secret_active(_deserialize_bundle(p["bob_bundle"]))
+    )
     return {
         "shared_secret": _b64(shared_secret),
         "associated_data": _b64(ad),
@@ -216,8 +219,8 @@ def _handle_get_shared_secret_active(p: dict) -> dict:
 def _handle_get_shared_secret_passive(p: dict) -> dict:
     dek = _require_dek()
     state = _unwrap_state(p["encrypted_state"], dek)
-    shared_secret, ad, spk_pair = state.get_shared_secret_passive(
-        _deserialize_x3dh_header(p["header"])
+    shared_secret, ad, spk_pair = asyncio.run(
+        state.get_shared_secret_passive(_deserialize_x3dh_header(p["header"]))
     )
     return {
         "shared_secret": _b64(shared_secret),
