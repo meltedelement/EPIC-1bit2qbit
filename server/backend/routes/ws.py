@@ -6,7 +6,8 @@ from pydantic import TypeAdapter, ValidationError
 
 from ..auth.credentials import verify_credentials
 from ..handlers import WsContext, key_bundle, messaging
-from ..schemas import ErrorFrame, InboundFrame, LoginFrame
+from ..schemas.http import LoginFrame
+from ..schemas.ws import ErrorFrame, InboundFrame
 from ..session import SessionRegistry
 
 logger = logging.getLogger(__name__)

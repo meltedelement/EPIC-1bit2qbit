@@ -6,7 +6,7 @@ from sqlalchemy import select
 from ..config.config import config
 from ..database.db import SessionLocal
 from ..database.models import BlockchainMessageQueue, TTLDeliveryQueue, User
-from ..schemas import DeliverMessageFrame, ErrorFrame, SendMessageFrame
+from ..schemas.ws import DeliverMessageFrame, ErrorFrame, SendMessageFrame
 from . import WsContext
 
 logger = logging.getLogger(__name__)
