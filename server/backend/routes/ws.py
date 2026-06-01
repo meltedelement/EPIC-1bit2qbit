@@ -65,10 +65,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
     logger.info("session opened: user=%s", repr(username))
     ctx = WsContext(username=username, websocket=websocket, registry=registry)
-    await messaging.drain_offline_queue(ctx)
 
     consecutive_errors = 0
     try:
+        await messaging.drain_offline_queue(ctx)
         while True:
             raw = await websocket.receive_text()
 

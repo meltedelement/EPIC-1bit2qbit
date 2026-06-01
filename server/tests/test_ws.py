@@ -11,6 +11,21 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+_MSG_SL = "backend.handlers.messaging.SessionLocal"
+
+
+def _session_cm(db):
+    cm = MagicMock()
+    cm.__enter__ = MagicMock(return_value=db)
+    cm.__exit__ = MagicMock(return_value=False)
+    return cm
+
+
+def _empty_drain():
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = []
+    return _session_cm(db)
+
 _app = FastAPI()
 _app.state.sessions = SessionRegistry()
 _app.include_router(router)
@@ -73,9 +88,10 @@ class TestVerifyCredentials:
 class TestWebSocketAuth:
     def test_valid_login_accepted(self):
         with patch("backend.auth.credentials.SessionLocal", return_value=_mock_db(_mock_user())):
-            with _client.websocket_connect("/ws") as ws:
-                ws.send_text(_login_frame())
-                ws.send_text("hello")
+            with patch(_MSG_SL, return_value=_empty_drain()):
+                with _client.websocket_connect("/ws") as ws:
+                    ws.send_text(_login_frame())
+                    ws.send_text("hello")
 
     def test_invalid_json_closes_4000(self):
         with _client.websocket_connect("/ws") as ws:
@@ -109,27 +125,30 @@ class TestWebSocketAuth:
 
     def test_duplicate_session_closes_4002(self):
         with patch("backend.auth.credentials.SessionLocal", return_value=_mock_db(_mock_user())):
-            with _client.websocket_connect("/ws") as first:
-                first.send_text(_login_frame())
-                with _client.websocket_connect("/ws") as second:
-                    second.send_text(_login_frame())
-                    with pytest.raises(WebSocketDisconnect) as exc:
-                        second.receive_text()
-                assert exc.value.code == 4002
+            with patch(_MSG_SL, return_value=_empty_drain()):
+                with _client.websocket_connect("/ws") as first:
+                    first.send_text(_login_frame())
+                    with _client.websocket_connect("/ws") as second:
+                        second.send_text(_login_frame())
+                        with pytest.raises(WebSocketDisconnect) as exc:
+                            second.receive_text()
+                    assert exc.value.code == 4002
 
 
 class TestWebSocketMessages:
     def test_oversized_message_closes_1009(self):
         with patch("backend.auth.credentials.SessionLocal", return_value=_mock_db(_mock_user())):
-            with _client.websocket_connect("/ws") as ws:
-                ws.send_text(_login_frame())
-                ws.send_text("x" * 4097)
-                with pytest.raises(WebSocketDisconnect) as exc:
-                    ws.receive_text()
+            with patch(_MSG_SL, return_value=_empty_drain()):
+                with _client.websocket_connect("/ws") as ws:
+                    ws.send_text(_login_frame())
+                    ws.send_text("x" * 4097)
+                    with pytest.raises(WebSocketDisconnect) as exc:
+                        ws.receive_text()
         assert exc.value.code == 1009
 
     def test_message_at_limit_accepted(self):
         with patch("backend.auth.credentials.SessionLocal", return_value=_mock_db(_mock_user())):
-            with _client.websocket_connect("/ws") as ws:
-                ws.send_text(_login_frame())
-                ws.send_text("x" * 4096)
+            with patch(_MSG_SL, return_value=_empty_drain()):
+                with _client.websocket_connect("/ws") as ws:
+                    ws.send_text(_login_frame())
+                    ws.send_text("x" * 4096)
