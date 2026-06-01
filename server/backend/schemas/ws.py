@@ -16,7 +16,7 @@ class PublishKeyBundleFrame(BaseModel):
     identity_key: str = Field(min_length=1)
     signed_pre_key: str = Field(min_length=1)
     signed_pre_key_sig: str = Field(min_length=1)
-    one_time_pre_keys: list[str] = Field(min_length=1)
+    one_time_pre_keys: list[Annotated[str, Field(min_length=1)]] = Field(min_length=1)
 
 
 class RequestKeyBundleFrame(BaseModel):
