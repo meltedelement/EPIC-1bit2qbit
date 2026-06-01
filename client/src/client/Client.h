@@ -3,6 +3,8 @@
 #include <memory>
 #include <string>
 
+#include <nlohmann/json.hpp>
+
 class Connection;
 class CryptoProxy;
 class MessageStore;
@@ -31,6 +33,14 @@ private:
     std::string                    host_;
     uint16_t                       port_;
     std::string                    current_user_;
+
+    // The DEK is never held in C++ — the crypto subprocess keeps the raw key in
+    // memory after create/unlock. We only retain the encrypted_dek blob
+    // ({salt, nonce, ciphertext}) needed to unlock it again.
+    // TODO(persistence): this belongs in MessageStore / the local key store so it
+    // survives across runs; for now it lives only for the session.
+    nlohmann::json                 encrypted_dek_;
+
     std::unique_ptr<Connection>    connection_;
     std::unique_ptr<CryptoProxy>   crypto_;
     std::unique_ptr<MessageStore>  store_;
