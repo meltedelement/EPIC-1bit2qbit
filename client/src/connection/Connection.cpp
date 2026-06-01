@@ -82,8 +82,10 @@ void Connection::disconnect() {
     // SSL object is not safe for concurrent use. Closing the fd makes that SSL_read
     // fail so read_loop exits; we then join before touching ssl_. Freeing the SSL
     // before the reader has stopped would be a use-after-free / data race.
-    if (tcp_sock_.is_open())
-        tcp_sock_.close();
+    if (tcp_sock_.is_open()) {
+        boost::system::error_code ec;
+        tcp_sock_.close(ec);
+    }
 
     if (read_thread_.joinable())
         read_thread_.join();
