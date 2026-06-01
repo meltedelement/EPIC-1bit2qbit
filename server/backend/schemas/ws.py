@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field
@@ -15,7 +13,10 @@ class SendMessageFrame(BaseModel):
 
 class PublishKeyBundleFrame(BaseModel):
     type: Literal["publish_key_bundle"]
-    bundle: str = Field(min_length=1)  # opaque JSON blob validated on publish
+    identity_key: str = Field(min_length=1)
+    signed_pre_key: str = Field(min_length=1)
+    signed_pre_key_sig: str = Field(min_length=1)
+    one_time_pre_keys: list[Annotated[str, Field(min_length=1)]] = Field(min_length=1)
 
 
 class RequestKeyBundleFrame(BaseModel):
@@ -40,7 +41,10 @@ class DeliverMessageFrame(BaseModel):
 class KeyBundleResponseFrame(BaseModel):
     type: Literal["key_bundle_response"] = "key_bundle_response"
     username: str
-    bundle: str  # the opaque JSON blob stored at publish time
+    identity_key: str
+    signed_pre_key: str
+    signed_pre_key_sig: str
+    one_time_pre_key: str | None  # None if the OTPK pool is exhausted
 
 
 class ErrorFrame(BaseModel):
