@@ -36,17 +36,11 @@ class DbConfig(BaseModel):
 
 class BackendConfig(BaseModel):
     internal_port: int
-    external_port: int
     host: str
     db: DbConfig
 
 
-class WebAppConfig(BaseModel):
-    internal_port: int
-
-
 class ServicesConfig(BaseModel):
-    web_app: WebAppConfig
     backend: BackendConfig
 
 
