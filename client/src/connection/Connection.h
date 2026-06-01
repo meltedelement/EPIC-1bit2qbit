@@ -1,0 +1,74 @@
+#pragma once
+#include <atomic>
+#include <cstdint>
+#include <functional>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <boost/asio.hpp>
+#include <openssl/ssl.h>
+#include "connection/TlsContext.h"
+
+using MessageCallback    = std::function<void(std::string)>;
+using DisconnectCallback = std::function<void(std::string reason)>;
+
+// Manages the full connection pipeline: TCP (Boost.Asio) → TLS (raw OpenSSL)
+// → WebSocket upgrade → framed message I/O.
+class Connection {
+public:
+    Connection(const std::string& host, uint16_t port);
+    ~Connection();
+
+    Connection(const Connection&)            = delete;
+    Connection& operator=(const Connection&) = delete;
+
+    // Blocking: TCP connect → TLS handshake (CA-verified) + cert pin → WS upgrade.
+    // pinned_fp: pass the stored fingerprint from MessageStore, or "" to pin on first connect.
+    // After connect(), call cert_fingerprint() to get the observed fingerprint;
+    // if pinned_fp was empty, save it to MessageStore.
+    void connect(const std::string& pinned_fp = "");
+    void disconnect();
+
+    void send_text(const std::string& payload);
+
+    // Callbacks. Threading contract: both fire on the internal read thread, NOT
+    // the caller's thread. Set them BEFORE connect() — the members are not
+    // synchronized and the read thread starts inside connect(). The callback body
+    // must not touch non-thread-safe state directly (FTXUI is not thread-safe);
+    // marshal the work onto the UI event loop.
+    void on_message(MessageCallback cb);        // fires per received message
+    void on_disconnect(DisconnectCallback cb);  // fires once on unexpected drop, with reason
+
+    bool        is_connected() const;
+    std::string cert_fingerprint() const;  // observed server cert fingerprint
+
+private:
+    void tcp_connect();
+    void tls_handshake(const std::string& pinned_fp);
+    void ws_handshake();
+    void read_loop();
+
+    // Raw SSL I/O
+    std::string ssl_read_exact(size_t n);
+    void        ssl_write_all(const std::string& data);
+
+    // WebSocket framing
+    void        ws_send_frame(uint8_t opcode, const std::string& payload);
+    std::string ws_encode_frame(uint8_t opcode, const std::string& payload);
+    std::string ws_decode_frame();
+    std::string ws_key_base64();
+
+    std::string                       host_;
+    uint16_t                          port_;
+    TlsContext                        tls_ctx_;
+    boost::asio::io_context           io_ctx_;
+    boost::asio::ip::tcp::socket      tcp_sock_;
+    SSL*                              ssl_{nullptr};
+    std::string                       server_cert_fp_;
+    MessageCallback                   on_message_cb_;
+    DisconnectCallback                on_disconnect_cb_;
+    std::atomic<bool>                 connected_{false};
+    std::atomic<bool>                 running_{false};
+    std::thread                       read_thread_;
+    std::mutex                        write_mutex_;
+};
