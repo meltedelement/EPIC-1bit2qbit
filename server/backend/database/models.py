@@ -80,9 +80,7 @@ class TTLDeliveryQueue(Base):
     __tablename__ = "ttl_delivery_queue"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    recipient_username: Mapped[str] = mapped_column(
-        String(64), ForeignKey("users.username")
-    )
+    recipient_username: Mapped[str] = mapped_column(String(64), ForeignKey("users.username"))
     frame_json: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
