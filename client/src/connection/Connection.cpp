@@ -60,6 +60,12 @@ Connection::Connection(const std::string& host, uint16_t port)
 Connection::~Connection() { disconnect(); }
 
 void Connection::connect(const std::string& pinned_fp) {
+    // Make connect() retryable: tear down any state left by a previous attempt
+    // (open socket, freed-or-not ssl_, a still-joinable read thread from an
+    // unexpected drop) before starting fresh. Harmless on the first call.
+    // Must be called from outside the read thread (see on_disconnect contract).
+    disconnect();
+
     tcp_connect();
     tls_handshake(pinned_fp);
     ws_handshake();
