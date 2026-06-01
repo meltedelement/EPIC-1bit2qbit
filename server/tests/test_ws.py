@@ -10,7 +10,7 @@ from backend.session import SessionRegistry
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
-from ws_helpers import _empty_drain, _session_cm
+from ws_helpers import _empty_drain
 
 _MSG_SL = "backend.handlers.messaging.SessionLocal"
 
