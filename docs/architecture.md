@@ -66,7 +66,7 @@ flowchart TB
     end
 
     subgraph PY["Python Crypto Subprocess"]
-        CRYPTO["Cryptography Module\n(Double Ratchet · PQXDH · AES-256-GCM)"]:::security
+        CRYPTO["Cryptography Module\n(Double Ratchet · X3DH · AES-256-GCM)"]:::security
     end
 
     ORCH --> UI
