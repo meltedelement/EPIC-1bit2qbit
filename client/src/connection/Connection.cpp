@@ -72,22 +72,27 @@ void Connection::disconnect() {
     running_   = false;
     connected_ = false;
 
-    if (ssl_) {
-        SSL_shutdown(ssl_);
-        SSL_free(ssl_);
-        ssl_ = nullptr;
-    }
+    // Close the socket first to interrupt any SSL_read blocked on the read
+    // thread, then join before touching ssl_. Freeing ssl_ while the read thread
+    // is still inside SSL_read on it would be a use-after-free.
     if (tcp_sock_.is_open())
         tcp_sock_.close();
 
     if (read_thread_.joinable())
         read_thread_.join();
+
+    if (ssl_) {
+        SSL_shutdown(ssl_);
+        SSL_free(ssl_);
+        ssl_ = nullptr;
+    }
 }
 
 bool        Connection::is_connected()    const { return connected_; }
 std::string Connection::cert_fingerprint() const { return server_cert_fp_; }
 
 void Connection::on_message(MessageCallback cb) { on_message_cb_ = std::move(cb); }
+void Connection::on_disconnect(DisconnectCallback cb) { on_disconnect_cb_ = std::move(cb); }
 
 // ─── TCP ─────────────────────────────────────────────────────────────────────
 
@@ -339,10 +344,14 @@ void Connection::read_loop() {
         try {
             std::string msg = ws_decode_frame();
             if (on_message_cb_) on_message_cb_(std::move(msg));
-        } catch (const std::exception&) {
-            // Connection closed or error — exit loop and mark disconnected
+        } catch (const std::exception& e) {
+            // Connection closed or error — exit loop and mark disconnected.
+            // exchange() distinguishes an unexpected drop (running_ was still
+            // true) from a caller-initiated disconnect() (already set false);
+            // only the former notifies. The callback runs on this read thread.
             connected_ = false;
-            running_   = false;
+            if (running_.exchange(false) && on_disconnect_cb_)
+                on_disconnect_cb_(e.what());
         }
     }
 }
