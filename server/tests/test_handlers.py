@@ -92,12 +92,16 @@ class TestFrameDispatch:
                     for _ in range(4):
                         ws.send_text("not json")
                         ws.receive_text()
-                    ws.send_text(json.dumps({
-                        "type": "send_message",
-                        "recipient": "bob",
-                        "ciphertext": "ct",
-                        "mid": "m1",
-                    }))
+                    ws.send_text(
+                        json.dumps(
+                            {
+                                "type": "send_message",
+                                "recipient": "bob",
+                                "ciphertext": "ct",
+                                "mid": "m1",
+                            }
+                        )
+                    )
                     ws.receive_text()  # unknown_recipient error
                     for _ in range(4):
                         ws.send_text("not json")
@@ -107,12 +111,14 @@ class TestFrameDispatch:
 
 class TestSendMessage:
     def _frame(self, recipient="bob", ciphertext="encrypted", mid="msg-001"):
-        return json.dumps({
-            "type": "send_message",
-            "recipient": recipient,
-            "ciphertext": ciphertext,
-            "mid": mid,
-        })
+        return json.dumps(
+            {
+                "type": "send_message",
+                "recipient": recipient,
+                "ciphertext": ciphertext,
+                "mid": mid,
+            }
+        )
 
     def test_unknown_recipient_returns_error(self):
         msg_db = _messaging_db()
@@ -195,13 +201,15 @@ class TestSendMessage:
 
 class TestPublishKeyBundle:
     def _frame(self, otpks=None):
-        return json.dumps({
-            "type": "publish_key_bundle",
-            "identity_key": "ik_base64",
-            "signed_pre_key": "spk_base64",
-            "signed_pre_key_sig": "sig_base64",
-            "one_time_pre_keys": otpks if otpks is not None else ["otpk1", "otpk2", "otpk3"],
-        })
+        return json.dumps(
+            {
+                "type": "publish_key_bundle",
+                "identity_key": "ik_base64",
+                "signed_pre_key": "spk_base64",
+                "signed_pre_key_sig": "sig_base64",
+                "one_time_pre_keys": otpks if otpks is not None else ["otpk1", "otpk2", "otpk3"],
+            }
+        )
 
     def test_new_bundle_is_inserted(self):
         kbd_db = MagicMock()

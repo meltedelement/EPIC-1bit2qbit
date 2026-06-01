@@ -49,7 +49,9 @@ async def handle_publish_key_bundle(frame: PublishKeyBundleFrame, ctx: WsContext
         db.commit()
 
     action = "updated" if existing is not None else "created"
-    logger.info("key bundle %s: user=%r otpks=%d", action, ctx.username, len(frame.one_time_pre_keys))
+    logger.info(
+        "key bundle %s: user=%r otpks=%d", action, ctx.username, len(frame.one_time_pre_keys)
+    )
 
 
 async def handle_request_key_bundle(frame: RequestKeyBundleFrame, ctx: WsContext) -> None:
@@ -87,7 +89,12 @@ async def handle_request_key_bundle(frame: RequestKeyBundleFrame, ctx: WsContext
             )
 
     if error is not None:
-        logger.warning("key bundle request failed: requester=%r target=%r reason=%s", ctx.username, frame.target_username, error)
+        logger.warning(
+            "key bundle request failed: requester=%r target=%r reason=%s",
+            ctx.username,
+            frame.target_username,
+            error,
+        )
         await ctx.websocket.send_text(
             ErrorFrame(code="no_key_bundle", detail=error).model_dump_json()
         )
