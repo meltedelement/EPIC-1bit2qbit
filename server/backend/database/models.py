@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -60,8 +60,11 @@ class BlockchainMessageQueue(Base):
     is the edit window — once edit_deadline passes the batcher is free to pick
     it up.
 
-    ciphertext is NULL and deleted=True for deletion tombstones; the batcher
-    hashes the mid alone in that case.
+    The server never interprets ciphertext content.  Edits and deletes are
+    encoded by the sender inside the ciphertext and are opaque to the server —
+    if the same mid arrives again from the same authenticated sender before
+    edit_deadline (+ a small server-side grace period), the ciphertext field is
+    simply overwritten in place.
     """
 
     __tablename__ = "blockchain_message_queue"
@@ -70,8 +73,7 @@ class BlockchainMessageQueue(Base):
     mid: Mapped[str] = mapped_column(String(150), unique=True)
     sender_username: Mapped[str] = mapped_column(String(64), ForeignKey("users.username"))
     recipient_username: Mapped[str] = mapped_column(String(64), ForeignKey("users.username"))
-    ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
-    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    ciphertext: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime)
     edit_deadline: Mapped[datetime] = mapped_column(DateTime)
 
@@ -85,14 +87,10 @@ class TTLDeliveryQueue(Base):
     """
     Offline delivery queue for frames that could not be pushed to a live session.
 
-    Covers three frame types:
-      - new messages (receiver was offline at send time)
-      - edit notifications (message already delivered, receiver now offline)
-      - delete notifications (message already delivered, receiver now offline)
-
-    Frames are append-only — rows are never updated, only inserted or deleted.
-    The receiver drains all frames in created_at order on reconnect; the client
-    reconciles state (original → edit/delete) locally.
+    All rows are deliver_message frames — the server never distinguishes new
+    messages from ciphertext updates.  If a mid is updated while the recipient
+    is offline, both the original frame and the update frame are appended; the
+    client reconciles them in created_at order on reconnect.
 
     Rows are hard-deleted in one of two ways:
       - immediately on successful delivery when the recipient reconnects

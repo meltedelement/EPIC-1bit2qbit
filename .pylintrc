@@ -20,6 +20,7 @@ const-naming-style = UPPER_CASE
 
 [DESIGN] # Change these if necessary
 max-args = 8
+max-positional-arguments = 6
 max-attributes = 10
 max-bool-expr = 5
 max-branches = 12
