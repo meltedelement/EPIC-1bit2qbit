@@ -2,12 +2,13 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from backend.database.models import KeyBundle, OneTimePreKey, TTLDeliveryQueue, User
+from backend.database.models import KeyBundle, OneTimePreKey, User
 from backend.routes.ws import router
 from backend.session import SessionRegistry
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
+from ws_helpers import _session_cm
 
 _app = FastAPI()
 _app.state.sessions = SessionRegistry()
@@ -22,14 +23,6 @@ _KBD_SL = "backend.handlers.key_bundle.SessionLocal"
 
 def _login_frame(username="alice"):
     return json.dumps({"username": username, "password": "irrelevant"})
-
-
-def _session_cm(db):
-    """Wrap a mock db into a context manager that SessionLocal() can return."""
-    cm = MagicMock()
-    cm.__enter__ = MagicMock(return_value=db)
-    cm.__exit__ = MagicMock(return_value=False)
-    return cm
 
 
 def _messaging_db():

@@ -10,21 +10,9 @@ from backend.session import SessionRegistry
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
+from ws_helpers import _empty_drain, _session_cm
 
 _MSG_SL = "backend.handlers.messaging.SessionLocal"
-
-
-def _session_cm(db):
-    cm = MagicMock()
-    cm.__enter__ = MagicMock(return_value=db)
-    cm.__exit__ = MagicMock(return_value=False)
-    return cm
-
-
-def _empty_drain():
-    db = MagicMock()
-    db.scalars.return_value.all.return_value = []
-    return _session_cm(db)
 
 
 _app = FastAPI()
