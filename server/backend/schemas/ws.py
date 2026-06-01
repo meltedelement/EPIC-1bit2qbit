@@ -4,6 +4,7 @@ from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field
 
+
 # Inbound frames (client → server)
 class SendMessageFrame(BaseModel):
     type: Literal["send_message"]
