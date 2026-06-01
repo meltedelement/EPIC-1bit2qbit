@@ -1,10 +1,56 @@
 #include "connection/Connection.h"
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
+#include <openssl/sha.h>
+#include <openssl/x509.h>
+
+namespace {
+
+// Upper bound on a single frame's payload and on a reassembled message, to stop
+// an attacker-controlled length from forcing a huge allocation.
+constexpr uint64_t kMaxFramePayload = 16 * 1024 * 1024;  // 16 MiB
+
+// RFC 6455 §1.3 — the server must return base64(SHA1(client_key + GUID)).
+std::string ws_compute_accept(const std::string& client_key) {
+    static constexpr char kGuid[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    std::string input = client_key + kGuid;
+
+    unsigned char digest[SHA_DIGEST_LENGTH];
+    SHA1(reinterpret_cast<const unsigned char*>(input.data()), input.size(), digest);
+
+    // base64 of 20 bytes: ceil(20/3)*4 = 28 chars + null terminator
+    unsigned char out[29];
+    EVP_EncodeBlock(out, digest, SHA_DIGEST_LENGTH);
+    return std::string{reinterpret_cast<char*>(out), 28};
+}
+
+// Extract a header value by case-insensitive field name, trimming surrounding
+// whitespace. Returns "" if the header is absent.
+std::string ws_header_value(const std::string& response, const std::string& name) {
+    std::string lower = response;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    size_t key = lower.find(name + ":");
+    if (key == std::string::npos) return "";
+
+    size_t start = key + name.size() + 1;
+    size_t end   = response.find("\r\n", start);
+    std::string value = response.substr(start, end - start);
+
+    auto not_space = [](unsigned char c) { return !std::isspace(c); };
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
+    value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
+    return value;
+}
+
+}  // namespace
 
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
@@ -61,22 +107,38 @@ void Connection::tcp_connect() {
 // ─── TLS ─────────────────────────────────────────────────────────────────────
 
 void Connection::tls_handshake(const std::string& pinned_fp) {
+    // Free any SSL from a previous (failed) attempt so connect() is retryable.
+    if (ssl_) { SSL_free(ssl_); ssl_ = nullptr; }
+
     ssl_ = SSL_new(tls_ctx_.ctx());
     if (!ssl_) throw std::runtime_error{"SSL_new failed"};
 
     // SNI — tells the server which hostname we want so it picks the right cert
-    SSL_set_tlsext_host_name(ssl_, host_.c_str());
+    if (SSL_set_tlsext_host_name(ssl_, host_.c_str()) != 1)
+        throw std::runtime_error{"SSL_set_tlsext_host_name failed"};
 
     // Hostname verification — OpenSSL checks CN/SAN during SSL_connect
-    SSL_set1_host(ssl_, host_.c_str());
+    if (SSL_set1_host(ssl_, host_.c_str()) != 1)
+        throw std::runtime_error{"SSL_set1_host failed"};
     SSL_set_verify(ssl_, SSL_VERIFY_PEER, nullptr);
 
     SSL_set_fd(ssl_, static_cast<int>(tcp_sock_.native_handle()));
 
     if (SSL_connect(ssl_) != 1) {
-        unsigned long err = ERR_get_error();
-        throw std::runtime_error{std::string{"SSL_connect failed: "}
-                                 + ERR_error_string(err, nullptr)};
+        std::string msg = "SSL_connect failed";
+
+        // A cert-verification failure leaves the ERR queue empty but records the
+        // reason in the verify result — surface it explicitly.
+        long verify = SSL_get_verify_result(ssl_);
+        if (verify != X509_V_OK)
+            msg += std::string{": "} + X509_verify_cert_error_string(verify);
+
+        // Drain the whole OpenSSL error queue, not just the first entry.
+        unsigned long err;
+        while ((err = ERR_get_error()) != 0)
+            msg += std::string{"; "} + ERR_error_string(err, nullptr);
+
+        throw std::runtime_error{msg};
     }
 
     server_cert_fp_ = tls_ctx_.verify_and_pin(ssl_, host_, pinned_fp);
@@ -115,7 +177,8 @@ void Connection::ssl_write_all(const std::string& data) {
 
 std::string Connection::ws_key_base64() {
     unsigned char buf[16];
-    RAND_bytes(buf, sizeof(buf));
+    if (RAND_bytes(buf, sizeof(buf)) != 1)
+        throw std::runtime_error{"RAND_bytes failed generating WS key"};
     // EVP_EncodeBlock output: ceil(16/3)*4 = 24 chars + null terminator
     unsigned char out[25];
     EVP_EncodeBlock(out, buf, sizeof(buf));
@@ -151,6 +214,9 @@ void Connection::ws_handshake() {
     if (status_line.rfind("HTTP/1.1 101", 0) != 0)
         throw std::runtime_error{"ws_handshake: expected 101 Switching Protocols, got: "
                                  + status_line};
+
+    if (ws_header_value(response, "sec-websocket-accept") != ws_compute_accept(key))
+        throw std::runtime_error{"ws_handshake: invalid Sec-WebSocket-Accept"};
 }
 
 // ─── WebSocket framing ───────────────────────────────────────────────────────
@@ -179,7 +245,8 @@ std::string Connection::ws_encode_frame(uint8_t opcode, const std::string& paylo
 
     // 4-byte masking key
     unsigned char mask[4];
-    RAND_bytes(mask, sizeof(mask));
+    if (RAND_bytes(mask, sizeof(mask)) != 1)
+        throw std::runtime_error{"RAND_bytes failed generating WS mask"};
     frame.append(reinterpret_cast<char*>(mask), 4);
 
     // Masked payload
@@ -202,12 +269,16 @@ void Connection::send_text(const std::string& payload) {
 }
 
 // RFC 6455 §5.2 — server frames MUST NOT be masked.
-// Handles ping (sends pong) and close frames internally; returns data payload.
+// Handles ping (sends pong), pong, and close internally; reassembles fragmented
+// messages (FIN bit + continuation frames) and returns the complete payload.
 std::string Connection::ws_decode_frame() {
+    std::string message;
+    bool        assembling = false;
     while (true) {
         std::string hdr = ssl_read_exact(2);
-        uint8_t opcode      = static_cast<uint8_t>(hdr[0]) & 0x0f;
-        bool    server_mask = (static_cast<uint8_t>(hdr[1]) & 0x80) != 0;
+        bool     fin         = (static_cast<uint8_t>(hdr[0]) & 0x80) != 0;
+        uint8_t  opcode      = static_cast<uint8_t>(hdr[0]) & 0x0f;
+        bool     server_mask = (static_cast<uint8_t>(hdr[1]) & 0x80) != 0;
         uint64_t payload_len = static_cast<uint8_t>(hdr[1]) & 0x7f;
 
         if (payload_len == 126) {
@@ -221,6 +292,9 @@ std::string Connection::ws_decode_frame() {
                 payload_len = (payload_len << 8) | static_cast<uint8_t>(ext[i]);
         }
 
+        if (payload_len > kMaxFramePayload)
+            throw std::runtime_error{"ws: frame payload exceeds limit"};
+
         // Server masking is forbidden by the spec; skip mask bytes if present anyway
         std::string mask_bytes;
         if (server_mask) mask_bytes = ssl_read_exact(4);
@@ -231,10 +305,28 @@ std::string Connection::ws_decode_frame() {
                 payload[i] ^= mask_bytes[i % 4];
         }
 
+        // Control frames are never fragmented and may interleave data fragments.
         if (opcode == 0x08) throw std::runtime_error{"ws: server sent close frame"};
         if (opcode == 0x09) { ws_send_frame(0x0a, payload); continue; }  // ping → pong
-        if (opcode == 0x01 || opcode == 0x02) return payload;
-        // continuation / unknown control frames: ignore
+        if (opcode == 0x0a) continue;                                    // pong → ignore
+
+        // Data (0x1 text / 0x2 binary) and continuation (0x0) frames.
+        if (opcode == 0x01 || opcode == 0x02) {
+            if (assembling)
+                throw std::runtime_error{"ws: new data frame during fragmented message"};
+            if (fin) return payload;              // unfragmented — fast path
+            message    = std::move(payload);
+            assembling = true;
+        } else if (opcode == 0x00) {
+            if (!assembling)
+                throw std::runtime_error{"ws: continuation frame with no message in progress"};
+            if (message.size() + payload.size() > kMaxFramePayload)
+                throw std::runtime_error{"ws: reassembled message exceeds limit"};
+            message += payload;
+            if (fin) return message;
+        } else {
+            throw std::runtime_error{"ws: unknown opcode"};
+        }
     }
 }
 
