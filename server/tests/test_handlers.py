@@ -1,8 +1,9 @@
 import json
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from backend.database.models import KeyBundle, OneTimePreKey, User
+from backend.database.models import BlockchainMessageQueue, KeyBundle, OneTimePreKey, User
 from backend.routes.ws import router
 from backend.session import SessionRegistry
 from fastapi import FastAPI
@@ -45,6 +46,15 @@ def _mock_otpk():
     o = MagicMock(spec=OneTimePreKey)
     o.key_data = "otpk_base64"
     return o
+
+
+def _mock_bmq(sender="alice", past_deadline=False):
+    bmq = MagicMock(spec=BlockchainMessageQueue)
+    bmq.sender_username = sender
+    bmq.recipient_username = "bob"
+    now = datetime.now(timezone.utc)
+    bmq.edit_deadline = now - timedelta(minutes=1) if past_deadline else now + timedelta(minutes=10)
+    return bmq
 
 
 class TestFrameDispatch:
@@ -91,7 +101,7 @@ class TestFrameDispatch:
                                 "type": "send_message",
                                 "recipient": "bob",
                                 "ciphertext": "ct",
-                                "mid": "m1",
+                                "mid": _valid_mid(),
                             }
                         )
                     )
@@ -102,14 +112,18 @@ class TestFrameDispatch:
                     # Connection still open — no exception raised
 
 
+def _valid_mid(sender="alice", recipient="bob") -> str:
+    return f"{sender}:{recipient}:{int(datetime.now(timezone.utc).timestamp() * 1000)}"
+
+
 class TestSendMessage:
-    def _frame(self, recipient="bob", ciphertext="encrypted", mid="msg-001"):
+    def _frame(self, recipient="bob", ciphertext="encrypted", mid=None):
         return json.dumps(
             {
                 "type": "send_message",
                 "recipient": recipient,
                 "ciphertext": ciphertext,
-                "mid": mid,
+                "mid": mid if mid is not None else _valid_mid(recipient=recipient),
             }
         )
 
@@ -129,7 +143,7 @@ class TestSendMessage:
 
     def test_offline_recipient_message_is_queued(self):
         msg_db = _messaging_db()
-        msg_db.scalar.return_value = MagicMock(spec=User)
+        msg_db.scalar.side_effect = [None, MagicMock(spec=User)]
 
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
@@ -145,26 +159,27 @@ class TestSendMessage:
     def test_online_recipient_message_delivered(self):
         bob_ws = AsyncMock()
         msg_db = _messaging_db()
-        msg_db.scalar.return_value = MagicMock(spec=User)
+        msg_db.scalar.side_effect = [None, MagicMock(spec=User)]
+        mid = _valid_mid()
 
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with patch.object(_app.state.sessions, "get", return_value=bob_ws):
                     with _client.websocket_connect("/ws") as ws:
                         ws.send_text(_login_frame())
-                        ws.send_text(self._frame())
+                        ws.send_text(self._frame(mid=mid))
 
         bob_ws.send_text.assert_awaited_once()
         delivered = json.loads(bob_ws.send_text.call_args[0][0])
         assert delivered["type"] == "deliver_message"
-        assert delivered["mid"] == "msg-001"
+        assert delivered["mid"] == mid
         assert delivered["sender"] == "alice"
 
     def test_online_delivery_failure_falls_back_to_queue(self):
         bob_ws = AsyncMock()
         bob_ws.send_text.side_effect = Exception("disconnected")
         msg_db = _messaging_db()
-        msg_db.scalar.return_value = MagicMock(spec=User)
+        msg_db.scalar.side_effect = [None, MagicMock(spec=User)]
 
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
@@ -179,7 +194,7 @@ class TestSendMessage:
     def test_online_recipient_does_not_write_to_ttl_queue(self):
         bob_ws = AsyncMock()
         msg_db = _messaging_db()
-        msg_db.scalar.return_value = MagicMock(spec=User)
+        msg_db.scalar.side_effect = [None, MagicMock(spec=User)]
 
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
@@ -190,6 +205,137 @@ class TestSendMessage:
 
         added = [type(c.args[0]).__name__ for c in msg_db.add.call_args_list]
         assert "TTLDeliveryQueue" not in added
+
+    def test_update_wrong_sender_returns_mid_conflict(self):
+        msg_db = _messaging_db()
+        msg_db.scalar.return_value = _mock_bmq(sender="carol")
+
+        with patch(_VERIFY, return_value=True):
+            with patch(_MSG_SL, return_value=_session_cm(msg_db)):
+                with _client.websocket_connect("/ws") as ws:
+                    ws.send_text(_login_frame())
+                    ws.send_text(self._frame())
+                    frame = json.loads(ws.receive_text())
+
+        assert frame["type"] == "error"
+        assert frame["code"] == "update_not_authorised"
+
+    def test_update_past_deadline_returns_error(self):
+        msg_db = _messaging_db()
+        msg_db.scalar.return_value = _mock_bmq(past_deadline=True)
+
+        with patch(_VERIFY, return_value=True):
+            with patch(_MSG_SL, return_value=_session_cm(msg_db)):
+                with _client.websocket_connect("/ws") as ws:
+                    ws.send_text(_login_frame())
+                    ws.send_text(self._frame())
+                    frame = json.loads(ws.receive_text())
+
+        assert frame["type"] == "error"
+        assert frame["code"] == "edit_deadline_passed"
+
+    def test_update_offline_recipient_queues_new_delivery(self):
+        existing = _mock_bmq()
+        msg_db = _messaging_db()
+        msg_db.scalar.return_value = existing
+
+        with patch(_VERIFY, return_value=True):
+            with patch(_MSG_SL, return_value=_session_cm(msg_db)):
+                with _client.websocket_connect("/ws") as ws:
+                    ws.send_text(_login_frame())
+                    ws.send_text(self._frame(ciphertext="updated_ct"))
+
+        assert existing.ciphertext == "updated_ct"
+        added = [type(c.args[0]).__name__ for c in msg_db.add.call_args_list]
+        assert "TTLDeliveryQueue" in added
+        msg_db.commit.assert_called()
+
+    def test_update_online_recipient_delivered(self):
+        bob_ws = AsyncMock()
+        existing = _mock_bmq()
+        msg_db = _messaging_db()
+        msg_db.scalar.return_value = existing
+
+        with patch(_VERIFY, return_value=True):
+            with patch(_MSG_SL, return_value=_session_cm(msg_db)):
+                with patch.object(_app.state.sessions, "get", return_value=bob_ws):
+                    with _client.websocket_connect("/ws") as ws:
+                        ws.send_text(_login_frame())
+                        ws.send_text(self._frame(ciphertext="updated_ct"))
+
+        assert existing.ciphertext == "updated_ct"
+        bob_ws.send_text.assert_awaited_once()
+        delivered = json.loads(bob_ws.send_text.call_args[0][0])
+        assert delivered["type"] == "deliver_message"
+        assert delivered["ciphertext"] == "updated_ct"
+
+
+class TestMidValidation:
+    def _frame(self, mid, recipient="bob"):
+        return json.dumps(
+            {"type": "send_message", "recipient": recipient, "ciphertext": "ct", "mid": mid}
+        )
+
+    def test_invalid_format_returns_error(self):
+        msg_db = _messaging_db()
+        with patch(_VERIFY, return_value=True):
+            with patch(_MSG_SL, return_value=_session_cm(msg_db)):
+                with _client.websocket_connect("/ws") as ws:
+                    ws.send_text(_login_frame())
+                    ws.send_text(self._frame(mid="not-a-valid-mid"))
+                    frame = json.loads(ws.receive_text())
+        assert frame["type"] == "error"
+        assert frame["code"] == "invalid_mid"
+
+    def test_sender_mismatch_returns_error(self):
+        msg_db = _messaging_db()
+        with patch(_VERIFY, return_value=True):
+            with patch(_MSG_SL, return_value=_session_cm(msg_db)):
+                with _client.websocket_connect("/ws") as ws:
+                    ws.send_text(_login_frame())
+                    ws.send_text(self._frame(mid=_valid_mid(sender="carol")))
+                    frame = json.loads(ws.receive_text())
+        assert frame["type"] == "error"
+        assert frame["code"] == "invalid_mid"
+
+    def test_recipient_mismatch_returns_error(self):
+        msg_db = _messaging_db()
+        with patch(_VERIFY, return_value=True):
+            with patch(_MSG_SL, return_value=_session_cm(msg_db)):
+                with _client.websocket_connect("/ws") as ws:
+                    ws.send_text(_login_frame())
+                    ws.send_text(self._frame(mid=_valid_mid(recipient="carol"), recipient="bob"))
+                    frame = json.loads(ws.receive_text())
+        assert frame["type"] == "error"
+        assert frame["code"] == "invalid_mid"
+
+    def test_stale_timestamp_returns_edit_deadline_passed(self):
+        msg_db = _messaging_db()
+        stale_ts = int(
+            (datetime.now(timezone.utc) - timedelta(hours=1)).timestamp() * 1000
+        )
+        with patch(_VERIFY, return_value=True):
+            with patch(_MSG_SL, return_value=_session_cm(msg_db)):
+                with _client.websocket_connect("/ws") as ws:
+                    ws.send_text(_login_frame())
+                    ws.send_text(self._frame(mid=f"alice:bob:{stale_ts}"))
+                    frame = json.loads(ws.receive_text())
+        assert frame["type"] == "error"
+        assert frame["code"] == "edit_deadline_passed"
+
+    def test_future_timestamp_returns_error(self):
+        msg_db = _messaging_db()
+        future_ts = int(
+            (datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp() * 1000
+        )
+        with patch(_VERIFY, return_value=True):
+            with patch(_MSG_SL, return_value=_session_cm(msg_db)):
+                with _client.websocket_connect("/ws") as ws:
+                    ws.send_text(_login_frame())
+                    ws.send_text(self._frame(mid=f"alice:bob:{future_ts}"))
+                    frame = json.loads(ws.receive_text())
+        assert frame["type"] == "error"
+        assert frame["code"] == "invalid_mid"
 
 
 class TestPublishKeyBundle:
