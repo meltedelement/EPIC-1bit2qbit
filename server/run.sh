@@ -114,7 +114,7 @@ start_backend() {
         die "Backend crashed at startup — check $LOG_DIR/backend.stdout.log"
     fi
     ok "Backend started (PID $new_pid)"
-    printf "    internal  http://127.0.0.1:8443\n"
+    printf "    internal  http://127.0.0.1:8000\n"
     printf "    external  https://1bit2qbit.theburkenator.com/backend/\n"
     printf "    api docs  https://1bit2qbit.theburkenator.com/backend/docs\n"
 }

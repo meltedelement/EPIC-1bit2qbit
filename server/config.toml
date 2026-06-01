@@ -3,7 +3,7 @@ external_host = "https://1bit2qbit.theburkenator.com"
 vm_address    = "200.69.13.70"
 
 [services.backend]
-internal_port = 8443
+internal_port = 8000
 host          = "127.0.0.1"
 
 # MySQL via Unix socket auth — no password, OS-level auth.
