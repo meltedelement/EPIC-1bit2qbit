@@ -49,10 +49,21 @@ class NetworkConfig(BaseModel):
     vm_address: str
 
 
+class MessagingConfig(BaseModel):
+    edit_window_minutes: int
+    message_ttl_days: int
+
+
+class BlockchainConfig(BaseModel):
+    batch_interval_minutes: int
+
+
 class Config(BaseModel):
     network: NetworkConfig
     services: ServicesConfig
     logging: LoggingConfig
+    messaging: MessagingConfig
+    blockchain: BlockchainConfig
 
 
 def _load() -> Config:

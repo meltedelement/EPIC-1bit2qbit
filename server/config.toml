@@ -11,6 +11,13 @@ host          = "127.0.0.1"
 [services.backend.db]
 url = "mysql+pymysql://epic@/epic?unix_socket=/var/run/mysqld/mysqld.sock"
 
+[messaging]
+edit_window_minutes = 10
+message_ttl_days    = 30
+
+[blockchain]
+batch_interval_minutes = 5
+
 [logging.stdout]
 enabled     = true
 level       = "DEBUG"
