@@ -31,35 +31,28 @@ Custom AEAD, Encrypt-and-MAC, MAC-then-Encrypt, ECB mode, non-AEAD schemes.
 
 ## 2. Key Establishment and Sender Authentication
 
-### Chosen scheme: PQXDH + Double Ratchet (Signal Protocol, post-quantum variant)
+### Chosen scheme: X3DH + Double Ratchet (Signal Protocol)
 
 **References:**
 
-- Signal PQXDH specification: [https://signal.org/docs/specifications/pqxdh/](https://signal.org/docs/specifications/pqxdh/)
-- NIST FIPS 203 (ML-KEM): [https://csrc.nist.gov/pubs/fips/203/final](https://csrc.nist.gov/pubs/fips/203/final)
-- Signal X3DH specification (baseline): [https://signal.org/docs/specifications/x3dh/](https://signal.org/docs/specifications/x3dh/)
+- Signal X3DH specification: [https://signal.org/docs/specifications/x3dh/](https://signal.org/docs/specifications/x3dh/)
 - Signal Double Ratchet specification: [https://signal.org/docs/specifications/doubleratchet/](https://signal.org/docs/specifications/doubleratchet/)
 
 **Libraries:**
 
-- [`python-x3dh`](https://github.com/Syndace/python-x3dh) is used as the foundation for the X3DH handshake. It is part of the OMEMO reference implementation and is considered reputable. We fork it to add the PQXDH extensions rather than implementing PQXDH from scratch.
-- [`liboqs-python`](https://github.com/open-quantum-safe/liboqs-python) or [`pqcrypto`](https://pypi.org/project/pqcrypto/) provides the ML-KEM primitive. Both are defensible choices; the spec does not mandate a specific PQKEM library.
-
-**ML-KEM parameter choice: ML-KEM-1024**
-
-ML-KEM-768 and ML-KEM-1024 are both defensible. We use **ML-KEM-1024** to match Signal's own production implementation, which provides the strongest available security margin at the cost of slightly larger key material. (NIST FIPS 203 defines all three parameter sets: ML-KEM-512, ML-KEM-768, ML-KEM-1024.)
+- [`python-x3dh`](https://github.com/Syndace/python-x3dh) — X3DH implementation used directly, part of the OMEMO reference implementation. Identity keys are Ed25519, hash function SHA-256, info string `b"EPIC"`, signed prekey rotation period 7 days, OPK refill threshold 99 / target 100.
+- [`python-doubleratchet`](https://github.com/Syndace/python-doubleratchet) — Double Ratchet with X25519 DH ratchet, HKDF root chain KDF (SHA-256, info `b"EPIC Root Chain KDF"`), separate-HMAC message chain KDF, AES-256-GCM AEAD.
 
 **Construction:**
 
-- Initial key agreement uses **PQXDH** (Post-Quantum Extended Diffie-Hellman), which combines X25519 (classical DH) and **ML-KEM-1024** (NIST FIPS 203) in a hybrid KEM. PQXDH requires adding additional keys to each key bundle beyond a standard X3DH bundle — specifically the pre-key encapsulation fields defined in the PQXDH spec — which the forked `python-x3dh` implementation handles.
-- The DH ratchet step in the Double Ratchet uses both X25519 and ML-KEM together, so that the session key is secure as long as either the classical or the post-quantum component is not broken.
-- The output of PQXDH feeds the Double Ratchet session.
+- Initial key agreement uses **X3DH** (Extended Diffie-Hellman). The X3DH output feeds the Double Ratchet session.
+- The DH ratchet step uses X25519 (Curve25519) for ephemeral key exchange.
+- Each message is encrypted with AES-256-GCM; associated data binds the ciphertext to the Double Ratchet message header (ratchet public key, sending chain length, previous sending chain length), preventing header substitution attacks.
 
 **Security properties:**
 
 - **Perfect Forward Secrecy (PFS):** Compromise of long-term keys does not expose past session keys, because the Double Ratchet derives fresh ephemeral keys for each message chain.
 - **Post-Compromise Security (PCS) / Break-in Recovery:** After a session key is compromised, the ratchet recovers security as soon as the next DH ratchet step occurs (requires a message round-trip).
-- **Post-quantum security:** ML-KEM provides resistance to attacks by quantum computers; X25519 provides classical security. The hybrid ensures security if either component holds.
 
 **Sender authentication:**
 Recipients can verify message origin because the X3DH handshake binds the sender's long-term identity key into the shared secret. A forged message from a different sender would not produce the correct shared secret and would fail AEAD authentication.
@@ -99,7 +92,7 @@ Parameters must be tuned to the server hardware during integration testing. The 
 
 **Reference:** RFC 5869 — HMAC-based Extract-and-Expand Key Derivation Function (HKDF).
 
-HKDF is used to derive multiple keys from a shared secret (e.g. the PQXDH output). Separate `info` strings achieve domain separation so that keys derived for different purposes (encryption key, MAC key, etc.) are cryptographically independent.
+HKDF is used to derive multiple keys from a shared secret (e.g. the X3DH output). Separate `info` strings achieve domain separation so that keys derived for different purposes (encryption key, MAC key, etc.) are cryptographically independent.
 
 
 **NIST SP 800-132 guidance:**
@@ -148,7 +141,7 @@ The two uses must be **domain-separated** (different salt namespaces or `context
 
 ### Known Limitations
 
-1. **Double Ratchet is not post-quantum secure.** PQXDH protects against *harvest-now-decrypt-later* attacks — an adversary recording ciphertext today cannot decrypt it later with a quantum computer, because the initial key agreement uses ML-KEM. However, the Double Ratchet's *post-compromise recovery* property (break-in recovery) does not hold against a quantum adversary, because the ratchet's DH steps can be broken by a sufficiently powerful quantum computer. There is no deployed solution to this problem; it is a known open issue in the field. We explicitly acknowledge this limitation and do not attempt to construct a post-quantum Double Ratchet.
+1. **No post-quantum security.** X3DH and the Double Ratchet both rely on X25519 (classical DH). A sufficiently powerful quantum computer could break the key agreement and ratchet steps. This is a known limitation of the classical Signal Protocol and is explicitly acknowledged — post-quantum key agreement (e.g. PQXDH with ML-KEM) was considered but not implemented.
 2. **No key revocation:** If a long-term identity key is compromised, there is no mechanism to revoke it and notify contacts. Contacts will continue to use the compromised key until manually updated.
 3. **TOFU first-contact vulnerability:** As described above.
 4. **No forward secrecy against device compromise:** If an attacker compromises a device and extracts the at-rest private key (e.g. via the user's passphrase), they can decrypt all messages stored locally on that device. The Double Ratchet limits this to already-stored messages, not future ones.
