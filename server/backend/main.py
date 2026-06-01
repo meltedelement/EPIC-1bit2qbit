@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     application.state.sessions = SessionRegistry()
-    logger.info("Session registry initialised")
+    logger.info("Session registry initialized")
     yield
     logger.info("Server shutting down")
 
