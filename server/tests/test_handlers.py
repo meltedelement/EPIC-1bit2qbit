@@ -220,7 +220,7 @@ class TestSendMessage:
         assert frame["type"] == "error"
         assert frame["code"] == "update_not_authorised"
 
-    def test_update_wrong_sender_returns_mid_conflict(self):
+    def test_update_wrong_sender_returns_unauthorised(self):
         msg_db = _messaging_db()
         msg_db.scalar.return_value = _mock_bmq(sender="carol")
 
