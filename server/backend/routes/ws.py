@@ -8,7 +8,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from ..auth.credentials import verify_credentials
-from ..database.schemas import LoginFrame
+from ..schemas.http import LoginFrame
 from ..session import SessionRegistry
 
 logger = logging.getLogger(__name__)
