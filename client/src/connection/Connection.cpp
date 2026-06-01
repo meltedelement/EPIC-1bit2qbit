@@ -26,16 +26,23 @@ void Connection::disconnect() {
     running_   = false;
     connected_ = false;
 
-    if (ssl_) {
-        SSL_shutdown(ssl_);
-        SSL_free(ssl_);
-        ssl_ = nullptr;
-    }
+    // Close the TCP socket first: read_thread_ may be blocked in SSL_read, and the
+    // SSL object is not safe for concurrent use. Closing the fd makes that SSL_read
+    // fail so read_loop exits; we then join before touching ssl_. Freeing the SSL
+    // before the reader has stopped would be a use-after-free / data race.
     if (tcp_sock_.is_open())
         tcp_sock_.close();
 
     if (read_thread_.joinable())
         read_thread_.join();
+
+    // Now the reader is gone — safe to tear down the SSL object. The socket is
+    // already closed, so this is an abrupt close (no close_notify); acceptable for
+    // a client-initiated disconnect.
+    if (ssl_) {
+        SSL_free(ssl_);
+        ssl_ = nullptr;
+    }
 }
 
 bool        Connection::is_connected()    const { return connected_; }
