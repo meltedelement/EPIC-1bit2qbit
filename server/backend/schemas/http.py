@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field
 
-
 _USERNAME_PATTERN = r"^[a-zA-Z0-9_.-]+$"
 
 

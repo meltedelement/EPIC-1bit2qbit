@@ -325,9 +325,7 @@ class TestMidValidation:
 
     def test_stale_timestamp_returns_edit_deadline_passed(self):
         msg_db = _messaging_db()
-        stale_ts = int(
-            (datetime.now(timezone.utc) - timedelta(hours=1)).timestamp() * 1000
-        )
+        stale_ts = int((datetime.now(timezone.utc) - timedelta(hours=1)).timestamp() * 1000)
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
@@ -339,9 +337,7 @@ class TestMidValidation:
 
     def test_future_timestamp_returns_error(self):
         msg_db = _messaging_db()
-        future_ts = int(
-            (datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp() * 1000
-        )
+        future_ts = int((datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp() * 1000)
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
