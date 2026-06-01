@@ -128,8 +128,13 @@ start_verify() {
         ok "Frontend built → web-app/dist/"
     fi
 
+    if [[ ! -f /etc/nginx/sites-available/1bit2qbit ]]; then
+        die "nginx config not installed — run ./run.sh setup first"
+    fi
+
     info "Enabling verify site…"
     sudo ln -sf /etc/nginx/sites-available/1bit2qbit /etc/nginx/sites-enabled/1bit2qbit
+    sudo nginx -t
     if nginx_running; then
         sudo systemctl reload nginx
     else
@@ -163,7 +168,11 @@ stop_verify() {
     if [[ -L /etc/nginx/sites-enabled/1bit2qbit ]]; then
         info "Disabling verify site…"
         sudo rm -f /etc/nginx/sites-enabled/1bit2qbit
-        sudo systemctl reload nginx
+        if nginx_running; then
+            sudo systemctl reload nginx
+        else
+            warn "nginx is not running — verify disabled but no reload performed"
+        fi
         ok "Verify stopped"
     else
         warn "Verify is not enabled"
@@ -279,7 +288,7 @@ cmd_logs() {
 
     if [[ "$DO_BACKEND" == true && "$DO_VERIFY" == true ]]; then
         info "Tailing all logs — Ctrl+C to stop"
-        trap 'kill $(jobs -p) 2>/dev/null; exit' INT TERM EXIT
+        trap 'kill $(jobs -p) 2>/dev/null || true; exit' INT TERM EXIT
         if [[ ${#backend_files[@]} -gt 0 ]]; then
             tail -F "${backend_files[@]}" &
         fi
