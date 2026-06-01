@@ -9,6 +9,7 @@ TlsContext::TlsContext() {
     if (!ctx_) throw std::runtime_error{"SSL_CTX_new failed"};
 
     SSL_CTX_set_min_proto_version(ctx_, TLS1_3_VERSION);
+    SSL_CTX_set_max_proto_version(ctx_, TLS1_3_VERSION);
 
     if (SSL_CTX_set_default_verify_paths(ctx_) != 1)
         throw std::runtime_error{"SSL_CTX_set_default_verify_paths failed"};
@@ -50,7 +51,7 @@ std::string TlsContext::verify_and_pin(SSL* ssl, const std::string& host,
     std::string fp = cert_sha256_fingerprint(cert);
 
     if (!pinned_fp.empty() && fp != pinned_fp)
-        throw std::runtime_error{"TOFU pin mismatch for " + host
+        throw std::runtime_error{"certificate pin mismatch for " + host
                                  + " — cert changed, possible MITM"};
     return fp;
 }
