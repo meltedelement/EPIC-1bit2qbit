@@ -25,7 +25,7 @@ class KeyBundle(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_username: Mapped[str] = mapped_column(
-        String(64), ForeignKey("users.username"), unique=True, index=True
+        String(64), ForeignKey("users.username"), unique=True
     )
     bundle_data: Mapped[str] = mapped_column(Text)  # JSON: IK, SPK, OPKs, signature, TTL
     published_at: Mapped[datetime] = mapped_column(DateTime)
@@ -47,7 +47,7 @@ class BlockchainMessageQueue(Base):
     __tablename__ = "blockchain_message_queue"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    mid: Mapped[str] = mapped_column(String(150), unique=True, index=True)
+    mid: Mapped[str] = mapped_column(String(150), unique=True)
     sender_username: Mapped[str] = mapped_column(String(64), ForeignKey("users.username"))
     recipient_username: Mapped[str] = mapped_column(String(64), ForeignKey("users.username"))
     ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -81,7 +81,7 @@ class TTLDeliveryQueue(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     recipient_username: Mapped[str] = mapped_column(
-        String(64), ForeignKey("users.username"), index=True
+        String(64), ForeignKey("users.username")
     )
     frame_json: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime)
