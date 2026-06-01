@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from ..auth.credentials import verify_credentials
 from ..database.schemas import LoginFrame
+from ..session import SessionRegistry
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ws"])
@@ -46,6 +47,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     if username is None:
         return
 
+    registry: SessionRegistry = websocket.app.state.sessions
+    if not registry.register(username, websocket):
+        await websocket.close(code=4002, reason="already connected")
+        return
+
     logger.info("session opened: user=%s", repr(username))
 
     try:
@@ -58,3 +64,5 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             logger.info("message from '%s': %s", username, safe)
     except WebSocketDisconnect:
         logger.info("session closed: user=%s", repr(username))
+    finally:
+        registry.unregister(username)
