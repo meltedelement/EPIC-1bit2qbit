@@ -63,7 +63,7 @@ class BlockchainMessageQueue(Base):
     The server never interprets ciphertext content.  Edits and deletes are
     encoded by the sender inside the ciphertext and are opaque to the server —
     if the same mid arrives again from the same authenticated sender before
-    edit_deadline (+ a small server-side grace period), the ciphertext field is 
+    edit_deadline (+ a small server-side grace period), the ciphertext field is
     simply overwritten in place.
     """
 
