@@ -69,7 +69,7 @@ def _wrap_state(state: x3dh.State, dek: bytes) -> dict:
     return {"nonce": _b64(nonce), "ciphertext": _b64(ciphertext)}
 
 
-def _unwrap_state(encrypted: dict, dek: bytes) -> x3dh.State:
+def _unwrap_state(encrypted: dict, dek: bytes) -> X3DHState:
     state_bytes = AESGCM(dek).decrypt(
         _unb64(encrypted["nonce"]),
         _unb64(encrypted["ciphertext"]),
@@ -77,6 +77,19 @@ def _unwrap_state(encrypted: dict, dek: bytes) -> x3dh.State:
     )
     state, _ = X3DHState.from_json(json.loads(state_bytes.decode()), **STATE_KWARGS)
     return state
+
+
+def _state_response(state: X3DHState, dek: bytes) -> dict:
+    """Re-wrap the state, plus a fresh bundle whenever the library re-published.
+
+    The C++ client must re-publish a `bundle` whenever a response carries one;
+    otherwise consumed one-time pre keys are never replenished server-side.
+    """
+    out = {"encrypted_state": _wrap_state(state, dek)}
+    bundle = state.pop_published_bundle()
+    if bundle is not None:
+        out["bundle"] = _serialize_bundle(bundle)
+    return out
 
 
 # x3DH bundle / header serialisation — translates library namedtuples to JSON
@@ -226,7 +239,7 @@ def _handle_get_shared_secret_passive(p: dict) -> dict:
         "shared_secret": _b64(shared_secret),
         "associated_data": _b64(ad),
         "own_ratchet_priv": _b64(spk_pair.priv),
-        "encrypted_state": _wrap_state(state, dek),
+        **_state_response(state, dek),
     }
 
 
