@@ -85,6 +85,6 @@ target_link_libraries(epic-client PRIVATE
 )
 
 target_compile_options(epic-client PRIVATE
-    $<$<CONFIG:Debug>:-Wall -Wextra -Wpedantic -g>
+    $<$<CONFIG:Debug>:-Wall;-Wextra;-Wpedantic;-g>
     $<$<CONFIG:Release>:-O2>
 )
