@@ -33,14 +33,18 @@ std::string ws_compute_accept(const std::string& client_key) {
 // Extract a header value by case-insensitive field name, trimming surrounding
 // whitespace. Returns "" if the header is absent.
 std::string ws_header_value(const std::string& response, const std::string& name) {
-    std::string lower = response;
-    std::transform(lower.begin(), lower.end(), lower.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    auto to_lower = [](std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return s;
+    };
+    std::string lower = to_lower(response);
+    std::string lname = to_lower(name);
 
-    size_t key = lower.find(name + ":");
+    size_t key = lower.find(lname + ":");
     if (key == std::string::npos) return "";
 
-    size_t start = key + name.size() + 1;
+    size_t start = key + lname.size() + 1;
     size_t end   = response.find("\r\n", start);
     std::string value = response.substr(start, end - start);
 
@@ -239,7 +243,7 @@ std::string Connection::ws_encode_frame(uint8_t opcode, const std::string& paylo
     frame += static_cast<char>(0x80 | (opcode & 0x0f));
 
     // Byte 1+: MASK=1, payload length
-    size_t len = payload.size();
+    uint64_t len = payload.size();
     if (len < 126) {
         frame += static_cast<char>(0x80 | len);
     } else if (len < 65536) {
@@ -304,15 +308,15 @@ std::string Connection::ws_decode_frame() {
         if (payload_len > kMaxFramePayload)
             throw std::runtime_error{"ws: frame payload exceeds limit"};
 
-        // Server masking is forbidden by the spec; skip mask bytes if present anyway
-        std::string mask_bytes;
-        if (server_mask) mask_bytes = ssl_read_exact(4);
+        // RFC 6455 §5.1 — servers MUST NOT mask frames sent to the client.
+        if (server_mask)
+            throw std::runtime_error{"ws: server frame is masked (protocol violation)"};
+
+        // RFC 6455 §5.5 — control frames must not be fragmented and carry ≤125 bytes.
+        if ((opcode & 0x08) != 0 && (!fin || payload_len > 125))
+            throw std::runtime_error{"ws: malformed control frame"};
 
         std::string payload = ssl_read_exact(static_cast<size_t>(payload_len));
-        if (server_mask) {
-            for (size_t i = 0; i < payload.size(); ++i)
-                payload[i] ^= mask_bytes[i % 4];
-        }
 
         // Control frames are never fragmented and may interleave data fragments.
         if (opcode == 0x08) throw std::runtime_error{"ws: server sent close frame"};

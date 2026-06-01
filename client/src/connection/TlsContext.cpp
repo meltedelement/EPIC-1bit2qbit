@@ -11,8 +11,11 @@ TlsContext::TlsContext() {
     SSL_CTX_set_min_proto_version(ctx_, TLS1_3_VERSION);
     SSL_CTX_set_max_proto_version(ctx_, TLS1_3_VERSION);
 
-    if (SSL_CTX_set_default_verify_paths(ctx_) != 1)
+    if (SSL_CTX_set_default_verify_paths(ctx_) != 1) {
+        SSL_CTX_free(ctx_);
+        ctx_ = nullptr;
         throw std::runtime_error{"SSL_CTX_set_default_verify_paths failed"};
+    }
 }
 
 TlsContext::~TlsContext() {
