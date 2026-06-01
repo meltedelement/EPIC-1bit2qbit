@@ -1,5 +1,4 @@
 import x3dh
-
 from crypto_functions.x3dh_state import X3DHState
 
 IDENTITY_KEY_FORMAT = x3dh.IdentityKeyFormat.ED_25519
