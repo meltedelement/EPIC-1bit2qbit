@@ -84,8 +84,8 @@ async def handle_send_message(frame: SendMessageFrame, ctx: WsContext) -> None:
         )
 
         if existing is not None:
-            # mid already staged — treat as a ciphertext update if sender matches
-            if existing.sender_username != ctx.username:
+            # mid already staged — treat as a ciphertext update if sender and recipient match
+            if existing.sender_username != ctx.username or existing.recipient_username != frame.recipient:
                 error_frame = ErrorFrame(
                     code="update_not_authorised",
                     detail="update not authorised",

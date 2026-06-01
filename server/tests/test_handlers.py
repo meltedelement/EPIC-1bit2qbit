@@ -206,6 +206,20 @@ class TestSendMessage:
         added = [type(c.args[0]).__name__ for c in msg_db.add.call_args_list]
         assert "TTLDeliveryQueue" not in added
 
+    def test_update_recipient_mismatch_returns_unauthorised(self):
+        msg_db = _messaging_db()
+        msg_db.scalar.return_value = _mock_bmq()  # recipient_username = "bob"
+
+        with patch(_VERIFY, return_value=True):
+            with patch(_MSG_SL, return_value=_session_cm(msg_db)):
+                with _client.websocket_connect("/ws") as ws:
+                    ws.send_text(_login_frame())
+                    ws.send_text(self._frame(recipient="carol"))  # different recipient
+                    frame = json.loads(ws.receive_text())
+
+        assert frame["type"] == "error"
+        assert frame["code"] == "update_not_authorised"
+
     def test_update_wrong_sender_returns_mid_conflict(self):
         msg_db = _messaging_db()
         msg_db.scalar.return_value = _mock_bmq(sender="carol")
