@@ -26,6 +26,7 @@ def _empty_drain():
     db.scalars.return_value.all.return_value = []
     return _session_cm(db)
 
+
 _app = FastAPI()
 _app.state.sessions = SessionRegistry()
 _app.include_router(router)
