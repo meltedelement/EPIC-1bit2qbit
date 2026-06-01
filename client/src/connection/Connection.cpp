@@ -140,9 +140,10 @@ void Connection::ws_handshake() {
             throw std::runtime_error{"ws_handshake: response header too large"};
     }
 
-    if (response.find("101") == std::string::npos)
+    std::string status_line = response.substr(0, response.find("\r\n"));
+    if (status_line.rfind("HTTP/1.1 101", 0) != 0)
         throw std::runtime_error{"ws_handshake: expected 101 Switching Protocols, got: "
-                                 + response.substr(0, response.find('\r'))};
+                                 + status_line};
 }
 
 // ─── WebSocket framing ───────────────────────────────────────────────────────
