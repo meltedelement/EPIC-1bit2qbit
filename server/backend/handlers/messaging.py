@@ -50,7 +50,7 @@ async def _deliver_or_queue(
 ) -> None:
     try:
         await recipient_ws.send_text(deliver_json)
-        logger.info("message delivered: mid=%r from=%r to=%r", mid, sender, recipient_username)
+        logger.debug("message delivered: mid=%r from=%r to=%r", mid, sender, recipient_username)
     except Exception:
         # Recipient disconnected between registry check and send.
         # Queue the frame so they receive it on reconnect.
@@ -147,7 +147,7 @@ async def handle_send_message(frame: SendMessageFrame, ctx: WsContext) -> None:
                         expires_at=expires_at,
                     )
                 )
-                logger.info(
+                logger.debug(
                     "message queued offline: mid=%r from=%r to=%r",
                     frame.mid,
                     ctx.username,
@@ -180,7 +180,7 @@ async def drain_offline_queue(ctx: WsContext) -> None:
     logger.info("draining offline queue: user=%r count=%d", ctx.username, len(frames))
     for row_id, deliver in frames:
         await ctx.websocket.send_text(deliver.model_dump_json())
-        logger.info(
+        logger.debug(
             "message delivered: mid=%r from=%r to=%r", deliver.mid, deliver.sender, ctx.username
         )
         with SessionLocal() as db:

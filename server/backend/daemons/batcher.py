@@ -28,7 +28,7 @@ def _run_batch() -> int:
     # Connection returned to pool before the blocking network call.
 
     # Raises on network error or on-chain revert — rows are only deleted on success.
-    results = add_to_blockchain(messages)
+    add_to_blockchain(messages)
 
     with SessionLocal() as db:
         db.query(BlockchainMessageQueue).filter(BlockchainMessageQueue.id.in_(row_ids)).delete(
