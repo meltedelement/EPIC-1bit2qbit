@@ -13,6 +13,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(Boost 1.74 REQUIRED)   # header-only; Asio needs no linked component
+find_package(SQLite3 REQUIRED)
 
 # ── Fetched dependencies ───────────────────────────────────────────────────────
 include(FetchContent)
@@ -77,6 +78,7 @@ target_link_libraries(epic-client PRIVATE
     OpenSSL::Crypto
     Boost::headers          # Boost.Asio is header-only
     Threads::Threads
+    SQLite::SQLite3
     ws2_32
     ftxui::screen
     ftxui::dom

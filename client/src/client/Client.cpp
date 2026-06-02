@@ -8,6 +8,8 @@
 #include "messaging/MessageStore.h"
 #include "ui/App.h"
 
+static constexpr const char* kDbPath = "epic.db";
+
 Client::Client(const std::string& host, uint16_t port)
     : host_{host}, port_{port} {}
 
@@ -17,6 +19,7 @@ void Client::run() {
     // Build the crypto subprocess bridge and the UI. The Connection (network) is
     // wired in a later step; this stage brings up the crypto link only.
     crypto_ = std::make_unique<CryptoProxy>();
+    store_  = std::make_unique<MessageStore>(kDbPath);
 
     AppCallbacks cbs;
     cbs.on_register = [this](std::string u, std::string p) { do_register(u, p); };
@@ -40,14 +43,11 @@ void Client::run() {
 // ── Outbound actions (called from UI) ────────────────────────────────────────────
 
 void Client::do_register(const std::string& username, const std::string& password) {
-    // Registration derives a fresh Data Encryption Key from the user's password and
-    // hands back the encrypted_dek blob to persist. The raw DEK stays inside the
-    // crypto subprocess.
     try {
         const nlohmann::json result = crypto_->create_dek(password, username);
         encrypted_dek_ = result.at("encrypted_dek");
         current_user_  = username;
-        // TODO(persistence): store encrypted_dek_ in the local key store.
+        store_->save_dek(username, encrypted_dek_.dump());
         // TODO(network): create_state() + publish key bundle via POST /register.
         app_->push_status("Registered '" + username + "' — DEK created and unlocked.");
     } catch (const std::exception& e) {
@@ -56,15 +56,16 @@ void Client::do_register(const std::string& username, const std::string& passwor
 }
 
 void Client::do_login(const std::string& username, const std::string& password) {
-    // Login re-derives the KEK from the password and unlocks the stored DEK inside
-    // the crypto subprocess. A wrong password fails the AES-GCM tag check and the
-    // subprocess returns an error, which surfaces here.
     try {
+        // Load the persisted DEK blob if we don't have it in memory already.
         if (encrypted_dek_.is_null()) {
-            // TODO(persistence): load encrypted_dek_ from the local key store here.
-            app_->push_status("No local key material for '" + username +
-                              "'. Register on this device first.");
-            return;
+            auto stored = store_->load_dek(username);
+            if (!stored) {
+                app_->push_status("No local key material for '" + username +
+                                  "'. Register on this device first.");
+                return;
+            }
+            encrypted_dek_ = nlohmann::json::parse(*stored);
         }
         crypto_->unlock_dek(password, username, encrypted_dek_);
         current_user_ = username;

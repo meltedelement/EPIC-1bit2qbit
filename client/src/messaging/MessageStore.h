@@ -5,18 +5,35 @@
 #include "messaging/Conversation.h"
 #include "messaging/Message.h"
 
-// Local encrypted-at-rest storage for message history and TOFU identity key pins.
+struct sqlite3;
+
+// Local storage for message history, TOFU identity key pins, and the encrypted DEK.
 class MessageStore {
 public:
     explicit MessageStore(const std::string& db_path);
+    ~MessageStore();
 
+    MessageStore(const MessageStore&)            = delete;
+    MessageStore& operator=(const MessageStore&) = delete;
+
+    // ── Messages ───────────────────────────────────────────────────────────────
     void save_message(const Message& msg);
     std::optional<Conversation> load_conversation(const std::string& peer) const;
     std::vector<std::string>    list_peers() const;
 
-    void   pin_identity_key(const std::string& username, const std::string& ik_pub);
+    // ── Conversation crypto state ──────────────────────────────────────────────
+    void save_ratchet_state(const std::string& peer, const std::string& state);
+    void save_associated_data(const std::string& peer, const std::string& ad);
+
+    // ── TOFU identity key pins ─────────────────────────────────────────────────
+    void pin_identity_key(const std::string& username, const std::string& ik_pub);
     std::optional<std::string> load_pinned_identity_key(const std::string& username) const;
+
+    // ── Encrypted DEK persistence ──────────────────────────────────────────────
+    void save_dek(const std::string& username, const std::string& encrypted_dek_json);
+    std::optional<std::string> load_dek(const std::string& username) const;
 
 private:
     std::string db_path_;
+    sqlite3*    db_{nullptr};
 };
