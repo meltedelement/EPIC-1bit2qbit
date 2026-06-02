@@ -51,9 +51,10 @@ void App::push_message(const std::string& sender, const std::string& body) {
             it = conversations_.end() - 1;
         }
         Message m;
-        m.peer      = sender;
-        m.recipient = local_username_;
-        m.body      = body;
+        m.peer         = sender;
+        m.recipient    = local_username_;
+        m.timestamp_ms = now_ms();
+        m.body         = body;
         it->add_message(std::move(m));
     };
     if (screen_ptr_)
