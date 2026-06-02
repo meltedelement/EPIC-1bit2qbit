@@ -1,17 +1,21 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <thread>
 #include <vector>
 #include <ftxui/component/screen_interactive.hpp>
 #include "messaging/Conversation.h"
+#include "messaging/Message.h"
 
 struct AppCallbacks {
-    std::function<void(std::string, std::string, std::string)> on_register;  // (username, auth_password, key_pin)
-    std::function<void(std::string, std::string, std::string)> on_login;  // (username, auth_password, key_pin)
-    std::function<void(std::string, std::string)> on_send;      // (recipient, plaintext)
-    std::function<void(uint64_t, bool)>           on_delete;    // (message_id, for_both_parties)
-    std::function<void(uint64_t, std::string)>    on_edit;      // (message_id, new_plaintext)
+    std::function<void(std::string, std::string, std::string)> on_register;
+    std::function<void(std::string, std::string, std::string)> on_login;
+    std::function<void(std::string, std::string)> on_send;
+    std::function<void(uint64_t, bool)>           on_delete;   // (message_id, for_both)
+    std::function<void(uint64_t, std::string)>    on_edit;     // (message_id, new_plaintext)
+    std::function<void(std::string, std::string)> on_forward;  // (recipient, body)
 };
 
 class App {
@@ -20,19 +24,18 @@ public:
     void run();
 
     void push_status(std::string msg);
-    void push_message(const std::string& sender, const std::string& body);
-    void push_sent_message(const std::string& recipient, const std::string& body);
+    void push_message(const Message& msg);
+    void push_sent_message(const Message& msg);
 
-    // Called by Client on a wrong-PIN attempt. Disables the login button and
-    // shows a countdown for `seconds` seconds before re-enabling it.
+    // Called by Client when a message body is edited locally.
+    void update_message_body(uint64_t id, const std::string& new_body);
+    // Called by Client when a message is deleted locally.
+    void remove_message(uint64_t id);
+
+    // Called by Client on a wrong-PIN attempt.
     void start_lockout(int seconds);
 
-    // Pre-populate conversation history before switching to the chat screen.
-    // Must be called before advance_to_chat().
     void set_conversations(std::vector<Conversation> convs);
-
-    // Switch to the chat screen after a successful login.
-    // Called by Client once the DEK is unlocked (and later, the WS session is live).
     void advance_to_chat(std::string username);
 
 private:
@@ -41,12 +44,12 @@ private:
     AppCallbacks cbs_;
     std::string  status_msg_;
 
-    int         active_screen_{0};  // 0=login, 1=chat
+    int         active_screen_{0};
     std::string local_username_;
 
     std::string login_username_;
-    std::string login_password_;   // server auth password
-    std::string login_key_pin_;    // DEK key PIN (registration only)
+    std::string login_password_;
+    std::string login_key_pin_;
 
     ftxui::ScreenInteractive* screen_ptr_{nullptr};
 
@@ -56,8 +59,16 @@ private:
     std::thread               lockout_thread_;
 
     std::vector<Conversation> conversations_;
-    std::vector<std::string>  conv_names_;    // kept in sync with conversations_
+    std::vector<std::string>  conv_names_;
     int                       selected_conv_{0};
     std::string               compose_text_;
     std::string               new_peer_;
+
+    // Message selection / options state
+    int         selected_msg_{-1};
+    bool        msg_options_open_{false};
+    bool        editing_msg_{false};
+    uint64_t    editing_msg_id_{0};
+    bool        forwarding_msg_{false};
+    std::string forwarding_body_;
 };

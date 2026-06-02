@@ -158,6 +158,7 @@ void Client::run() {
     cbs.on_send     = [this](std::string r, std::string t) { do_send(r, t); };
     cbs.on_delete   = [this](uint64_t id, bool both) { do_delete(id, both); };
     cbs.on_edit     = [this](uint64_t id, std::string t) { do_edit(id, t); };
+    cbs.on_forward  = [this](std::string r, std::string t) { do_send(r, t); };
     app_ = std::make_unique<App>(std::move(cbs));
 
     // Spawn client/subprocess_handler.py with its stdin/stdout piped to us. The
@@ -337,8 +338,23 @@ void Client::do_send(const std::string& recipient, const std::string& plaintext)
     }
 }
 
-void Client::do_delete(uint64_t /*message_id*/, bool /*for_both_parties*/) {}
-void Client::do_edit(uint64_t /*message_id*/, const std::string& /*new_plaintext*/) {}
+void Client::do_delete(uint64_t message_id, bool /*for_both_parties*/) {
+    if (!store_) return;
+    std::lock_guard<std::mutex> lk(mutex_);
+    store_->delete_message(message_id);
+    for (auto& [peer, conv] : conversations_)
+        conv.remove_message(message_id);
+    app_->remove_message(message_id);
+}
+
+void Client::do_edit(uint64_t message_id, const std::string& new_plaintext) {
+    if (!store_) return;
+    std::lock_guard<std::mutex> lk(mutex_);
+    store_->update_message_body(message_id, storage_encrypt(new_plaintext));
+    for (auto& [peer, conv] : conversations_)
+        conv.update_message_body(message_id, new_plaintext);
+    app_->update_message_body(message_id, new_plaintext);
+}
 
 // ── Reconnect ────────────────────────────────────────────────────────────────────
 
@@ -490,20 +506,22 @@ void Client::on_deliver_message(const nlohmann::json& frame) {
             return;
         }
 
-        const std::string body = message_to_body(plaintext_b64);
+        const std::string body            = message_to_body(plaintext_b64);
+        const std::string wire_ciphertext = frame.value("ciphertext", std::string{});
         epic_log("on_deliver_message: decrypted body=" + body);
         Message msg;
-        msg.peer         = sender;
-        msg.recipient    = current_user_;
-        msg.timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        msg.peer             = sender;
+        msg.recipient        = current_user_;
+        msg.timestamp_ms     = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
-        msg.body         = body;
+        msg.body             = body;
+        msg.wire_ciphertext  = wire_ciphertext;
+        Message store_msg    = msg;
+        store_msg.body       = storage_encrypt(body);
+        msg.id               = store_->save_message(store_msg);
         conv.add_message(msg);
-        Message store_msg = msg;
-        store_msg.body = storage_encrypt(body);
-        store_->save_message(store_msg);
         epic_log("on_deliver_message: calling push_message");
-        app_->push_message(sender, body);
+        app_->push_message(msg);
     } catch (const std::exception& e) {
         app_->push_status("Failed to decrypt message from '" + sender + "': " + e.what());
     }
@@ -548,16 +566,23 @@ void Client::encrypt_and_send(Conversation& conv, const std::string& plaintext) 
                                                         conv.associated_data());
     conv.set_ratchet_state(enc.at("ratchet_state").dump());
     store_->save_ratchet_state(conv.peer(), storage_encrypt(conv.ratchet_state()));
+    nlohmann::json env;
+    env["dr"]   = enc.at("encrypted_message");
+    env["x3dh"] = nullptr;
+    const std::string wire_ct = env.dump();
     send_chat_frame(conv.peer(), enc.at("encrypted_message"), nullptr);
     Message sent_msg;
-    sent_msg.peer         = conv.peer();
-    sent_msg.recipient    = conv.peer();
-    sent_msg.timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+    sent_msg.peer            = conv.peer();
+    sent_msg.recipient       = conv.peer();
+    sent_msg.timestamp_ms    = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    sent_msg.body         = storage_encrypt(plaintext);
-    store_->save_message(sent_msg);
+    sent_msg.wire_ciphertext = wire_ct;
+    sent_msg.body            = storage_encrypt(plaintext);
+    sent_msg.id              = store_->save_message(sent_msg);
+    sent_msg.body            = plaintext;  // restore plaintext for in-memory/UI use
+    conv.add_message(sent_msg);
     epic_log("encrypt_and_send: frame sent, pushing to UI");
-    app_->push_sent_message(conv.peer(), plaintext);
+    app_->push_sent_message(sent_msg);
 }
 
 void Client::start_session_and_send(const std::string& peer, const nlohmann::json& bundle,
@@ -599,15 +624,22 @@ void Client::start_session_and_send(const std::string& peer, const nlohmann::jso
     store_->save_encrypted_state(current_user_, encrypted_state_.dump());
 
     const nlohmann::json header = ss.at("header");
+    nlohmann::json env_init;
+    env_init["dr"]   = enc.at("encrypted_message");
+    env_init["x3dh"] = header;
+    const std::string wire_ct_init = env_init.dump();
     send_chat_frame(peer, enc.at("encrypted_message"), &header);
     Message sent_msg;
-    sent_msg.peer         = peer;
-    sent_msg.recipient    = peer;
-    sent_msg.timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+    sent_msg.peer            = peer;
+    sent_msg.recipient       = peer;
+    sent_msg.timestamp_ms    = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    sent_msg.body         = storage_encrypt(plaintext);
-    store_->save_message(sent_msg);
-    app_->push_sent_message(peer, plaintext);
+    sent_msg.wire_ciphertext = wire_ct_init;
+    sent_msg.body            = storage_encrypt(plaintext);
+    sent_msg.id              = store_->save_message(sent_msg);
+    sent_msg.body            = plaintext;  // restore plaintext for in-memory/UI use
+    conv.add_message(sent_msg);
+    app_->push_sent_message(sent_msg);
 }
 
 void Client::send_chat_frame(const std::string& recipient, const nlohmann::json& dr_message,

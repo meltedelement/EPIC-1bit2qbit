@@ -17,7 +17,9 @@ public:
     MessageStore& operator=(const MessageStore&) = delete;
 
     // ── Messages ───────────────────────────────────────────────────────────────
-    void save_message(const Message& msg);
+    uint64_t save_message(const Message& msg);   // returns DB-assigned rowid
+    void     delete_message(uint64_t id);
+    void     update_message_body(uint64_t id, const std::string& encrypted_body);
     std::optional<Conversation> load_conversation(const std::string& peer) const;
     std::vector<std::string>    list_peers() const;
 
