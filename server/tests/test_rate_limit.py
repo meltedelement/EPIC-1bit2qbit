@@ -75,7 +75,7 @@ class TestRateLimiterHit:
         with patch("backend.rate_limit.time.monotonic", return_value=t):
             rl.hit("ip", 5, 60)
         with patch("backend.rate_limit.time.monotonic", return_value=t + 61.0):
-            rl.hit("ip", 5, 60)  # triggers prune of the now-expired entry
+            rl.is_blocked("ip", 5, 60)  # prunes without recording — key should be deleted
         assert "ip" not in rl._windows
 
 

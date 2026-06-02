@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from backend.database.models import BlockchainMessageQueue, KeyBundle, OneTimePreKey, User
+from backend.rate_limit import RateLimiter
 from backend.routes.ws import router
 from backend.session import SessionRegistry
 from fastapi import FastAPI
@@ -13,6 +14,7 @@ from ws_helpers import _session_cm
 
 _app = FastAPI()
 _app.state.sessions = SessionRegistry()
+_app.state.rate_limiter = RateLimiter()
 _app.include_router(router)
 _client = TestClient(_app)
 
