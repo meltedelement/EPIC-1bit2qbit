@@ -14,7 +14,7 @@ namespace {
 
 // Upper bound on a single frame's payload and on a reassembled message, to stop
 // an attacker-controlled length from forcing a huge allocation.
-constexpr uint64_t kMaxFramePayload = 16 * 1024 * 1024;  // 16 MiB
+constexpr uint64_t kMaxFramePayload = 16384;  // 16 KiB
 
 // RFC 6455 §1.3 — the server must return base64(SHA1(client_key + GUID)).
 std::string ws_compute_accept(const std::string& client_key) {
