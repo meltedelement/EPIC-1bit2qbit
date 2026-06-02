@@ -290,22 +290,26 @@ cmd_logs() {
 
     local nginx_logs=(/var/log/nginx/verify.access.log /var/log/nginx/verify.error.log)
 
+    if [[ "$DO_VERIFY" == true ]]; then
+        sudo touch "${nginx_logs[@]}"
+    fi
+
     if [[ "$DO_BACKEND" == true && "$DO_VERIFY" == true ]]; then
         info "Tailing all logs — Ctrl+C to stop"
         trap 'kill $(jobs -p) 2>/dev/null || true; exit' INT TERM EXIT
         if [[ ${#backend_files[@]} -gt 0 ]]; then
-            tail -qF "${backend_files[@]}" &
+            tail -qFn0 "${backend_files[@]}" &
         fi
         sudo -v  # cache credentials before backgrounding — avoids a prompt inside &
-        sudo tail -F "${nginx_logs[@]}" | colorize_nginx_logs &
+        sudo tail -Fn0 "${nginx_logs[@]}" | colorize_nginx_logs &
         wait
     elif [[ "$DO_BACKEND" == true ]]; then
         if [[ ${#backend_files[@]} -eq 0 ]]; then exit 0; fi
         info "Tailing backend logs — Ctrl+C to stop"
-        exec tail -qF "${backend_files[@]}"
+        exec tail -qFn0 "${backend_files[@]}"
     else
         info "Tailing nginx logs — Ctrl+C to stop"
-        sudo tail -F "${nginx_logs[@]}" | colorize_nginx_logs
+        sudo tail -Fn0 "${nginx_logs[@]}" | colorize_nginx_logs
     fi
 }
 
