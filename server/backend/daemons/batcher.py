@@ -1,8 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
-
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from ..blockchain.batcher import add_to_blockchain
 from ..config.config import config
