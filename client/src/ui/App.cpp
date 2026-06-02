@@ -359,7 +359,7 @@ void App::run() {
         while (running.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             if (running.load())
-                screen.Post([] {});
+                screen.PostEvent(Event::Custom);
         }
     });
 
