@@ -117,6 +117,12 @@ class TestWebSocketAuth:
             with patch(_MSG_SL, return_value=_empty_drain()):
                 with _client.websocket_connect("/ws") as first:
                     first.send_text(_login_frame())
+                    # Probe: wait for an error response so we know first has completed
+                    # auth and is registered in the session registry before second connects.
+                    # Without this, both asyncio.to_thread(verify_credentials) calls race
+                    # and second can register before first, causing the test to hang.
+                    first.send_text("not json")
+                    first.receive_text()
                     with _client.websocket_connect("/ws") as second:
                         second.send_text(_login_frame())
                         with pytest.raises(WebSocketDisconnect) as exc:

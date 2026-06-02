@@ -72,6 +72,20 @@ def _submit_batch(messages: list[str]) -> dict:
     if missing:
         raise ValueError(f"Missing required environment variable(s): {', '.join(missing)}")
 
+    key_hex = private_key.removeprefix("0x")
+    if len(key_hex) != 64 or not all(c in "0123456789abcdefABCDEF" for c in key_hex):
+        raise ValueError(
+            "PRIVATE_KEY in .env is not a valid 64-character hex private key "
+            f"(got {len(key_hex)} characters after optional '0x' prefix) — "
+            "replace the placeholder with your actual wallet private key"
+        )
+
+    if not Web3.is_address(contract_address):
+        raise ValueError(
+            f"CONTRACT_ADDRESS in .env is not a valid Ethereum address "
+            f"(got {contract_address!r}) — deploy the contract and set the address in .env"
+        )
+
     w3 = Web3(Web3.HTTPProvider(rpc_url))
 
     with open(os.path.join(os.path.dirname(__file__), "abi.json"), encoding="utf-8") as f:
@@ -99,7 +113,7 @@ def _submit_batch(messages: list[str]) -> dict:
     signed = w3.eth.account.sign_transaction(tx, private_key=private_key)
     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
     logger.info("Batch submitted — tx_hash=%s, leaf_count=%d", tx_hash.hex(), len(leaves))
-    receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
 
     if receipt.status != 1:
         logger.error("Transaction reverted on-chain — tx_hash=%s", tx_hash.hex())

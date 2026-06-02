@@ -2,11 +2,13 @@ from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field
 
+_USERNAME_PATTERN = r"^[a-zA-Z0-9_.-]+$"
+
 
 # Inbound frames (client → server)
 class SendMessageFrame(BaseModel):
     type: Literal["send_message"]
-    recipient: str = Field(min_length=1, max_length=64)
+    recipient: str = Field(min_length=1, max_length=64, pattern=_USERNAME_PATTERN)
     ciphertext: str = Field(min_length=1)
     mid: str = Field(min_length=1, max_length=150)
 
@@ -21,7 +23,7 @@ class PublishKeyBundleFrame(BaseModel):
 
 class RequestKeyBundleFrame(BaseModel):
     type: Literal["request_key_bundle"]
-    target_username: str = Field(min_length=1, max_length=64)
+    target_username: str = Field(min_length=1, max_length=64, pattern=_USERNAME_PATTERN)
 
 
 InboundFrame = Annotated[
@@ -33,14 +35,14 @@ InboundFrame = Annotated[
 # Outbound frames (server → client)
 class DeliverMessageFrame(BaseModel):
     type: Literal["deliver_message"] = "deliver_message"
-    sender: str
+    sender: str = Field(min_length=1, max_length=64, pattern=_USERNAME_PATTERN)
     ciphertext: str
     mid: str
 
 
 class KeyBundleResponseFrame(BaseModel):
     type: Literal["key_bundle_response"] = "key_bundle_response"
-    username: str
+    username: str = Field(min_length=1, max_length=64, pattern=_USERNAME_PATTERN)
     identity_key: str
     signed_pre_key: str
     signed_pre_key_sig: str
