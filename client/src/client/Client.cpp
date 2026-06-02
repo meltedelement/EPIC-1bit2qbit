@@ -68,6 +68,7 @@ void Client::do_login(const std::string& username, const std::string& password) 
         }
         crypto_->unlock_dek(password, username, encrypted_dek_);
         current_user_ = username;
+        app_->advance_to_chat(username);
         // TODO(network): open the WSS connection and send the login frame.
         app_->push_status("Logged in as '" + username + "' — DEK unlocked.");
     } catch (const std::exception& e) {

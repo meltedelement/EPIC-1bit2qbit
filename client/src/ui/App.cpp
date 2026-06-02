@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <ctime>
+#include <utility>
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/event.hpp>
@@ -27,8 +28,17 @@ int64_t now_ms() {
 
 }  // namespace
 
+App::App(AppCallbacks cbs) : cbs_{std::move(cbs)} {}
+
+void App::push_status(std::string msg) { status_msg_ = std::move(msg); }
+
+void App::advance_to_chat(std::string username) {
+    local_username_ = std::move(username);
+    screen_ = 1;
+}
+
 void App::seed_placeholder_data() {
-    local_username_   = "alice";
+    local_username_    = "alice";
     const int64_t base = now_ms() - 3'600'000;
 
     {
@@ -52,7 +62,10 @@ void App::seed_placeholder_data() {
 }
 
 void App::run() {
-    seed_placeholder_data();
+    // Only seed placeholder data when running without a real Client wired up.
+    if (!cbs_.on_login)
+        seed_placeholder_data();
+
     auto screen = ScreenInteractive::Fullscreen();
 
     // ── Login ─────────────────────────────────────────────────────────────────
@@ -63,15 +76,34 @@ void App::run() {
     auto pin_input      = Input(&login_pin_,      "PIN", pin_opt);
 
     auto login_btn = Button(" Login ", [&] {
-        if (!login_username_.empty() && !login_pin_.empty()) {
-            local_username_ = login_username_;
-            screen_ = 1;
+        if (login_username_.empty() || login_pin_.empty()) return;
+        if (cbs_.on_login) {
+            cbs_.on_login(login_username_, login_pin_);
+        } else {
+            advance_to_chat(login_username_);
         }
     }, ButtonOption::Ascii());
 
-    auto login_form = Container::Vertical({username_input, pin_input, login_btn});
+    auto register_btn = Button(" Register ", [&] {
+        if (login_username_.empty() || login_pin_.empty()) return;
+        if (cbs_.on_register) {
+            cbs_.on_register(login_username_, login_pin_);
+        } else {
+            advance_to_chat(login_username_);
+        }
+    }, ButtonOption::Ascii());
+
+    auto login_form = Container::Vertical({
+        username_input,
+        pin_input,
+        Container::Horizontal({register_btn, login_btn}),
+    });
 
     auto login_renderer = Renderer(login_form, [&]() -> Element {
+        Element status = status_msg_.empty()
+            ? text("") | dim
+            : text(" " + status_msg_) | color(Color::Red);
+
         return vbox({
             filler(),
             hbox({
@@ -83,7 +115,14 @@ void App::run() {
                     hbox({text(" Username : "), username_input->Render() | flex}),
                     hbox({text(" PIN      : "), pin_input->Render()      | flex}),
                     separator(),
-                    login_btn->Render() | center,
+                    hbox({
+                        filler(),
+                        register_btn->Render(),
+                        text("  "),
+                        login_btn->Render(),
+                        filler(),
+                    }),
+                    status | center,
                 }) | border | size(WIDTH, EQUAL, 46),
                 filler(),
             }),
@@ -99,16 +138,24 @@ void App::run() {
     auto conv_menu = Menu(&conv_names, &selected_conv_);
 
     auto do_send = [&] {
-        if (compose_text_.empty() || conversations_.empty()) return;
-        Message m;
-        m.id           = static_cast<uint64_t>(now_ms());
-        m.peer         = conversations_[selected_conv_].peer();
-        m.recipient    = m.peer;
-        m.timestamp_ms = now_ms();
-        m.type         = MessageType::Standard;
-        m.body         = compose_text_;
-        conversations_[selected_conv_].add_message(std::move(m));
-        compose_text_.clear();
+        if (compose_text_.empty()) return;
+        if (cbs_.on_send) {
+            if (conversations_.empty()) return;
+            cbs_.on_send(conversations_[selected_conv_].peer(), compose_text_);
+            compose_text_.clear();
+        } else {
+            // Placeholder: append directly without encryption.
+            if (conversations_.empty()) return;
+            Message m;
+            m.id           = static_cast<uint64_t>(now_ms());
+            m.peer         = conversations_[selected_conv_].peer();
+            m.recipient    = m.peer;
+            m.timestamp_ms = now_ms();
+            m.type         = MessageType::Standard;
+            m.body         = compose_text_;
+            conversations_[selected_conv_].add_message(std::move(m));
+            compose_text_.clear();
+        }
     };
 
     auto compose_input = Input(&compose_text_, "Type a message...");
@@ -123,7 +170,6 @@ void App::run() {
     auto chat_layout = Container::Horizontal({conv_menu, chat_right});
 
     auto chat_renderer = Renderer(chat_layout, [&]() -> Element {
-        // Build message list, auto-scrolling to the latest entry
         Elements msg_els;
         if (!conversations_.empty()) {
             for (const auto& m : conversations_[selected_conv_].messages()) {
@@ -136,7 +182,7 @@ void App::run() {
                     text(m.body) | flex,
                 }));
             }
-            msg_els.back() = msg_els.back() | focus;  // keep newest message visible
+            msg_els.back() = msg_els.back() | focus;
         } else {
             msg_els.push_back(text("No messages yet.") | dim | center);
         }
@@ -146,7 +192,6 @@ void App::run() {
             : conversations_[selected_conv_].peer();
 
         return vbox({
-            // Title bar
             hbox({
                 text("  EPIC") | bold | color(Color::Cyan),
                 text(" Secure Messenger") | color(Color::Cyan),
@@ -154,7 +199,6 @@ void App::run() {
                 text(" " + local_username_ + " ") | bold,
             }),
             separator(),
-            // Sidebar + message pane
             hbox({
                 vbox({
                     text(" Conversations") | bold,

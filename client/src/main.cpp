@@ -1,6 +1,6 @@
-#include "ui/App.h"
+#include "client/Client.h"
 
 int main() {
-    App{}.run();
+    Client{"localhost", 443}.run();
     return 0;
 }

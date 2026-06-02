@@ -4,17 +4,186 @@
 #include <cstring>
 #include <stdexcept>
 
-#include <fcntl.h>
-#include <sys/wait.h>
-#include <unistd.h>
+#ifndef _WIN32
+#  include <fcntl.h>
+#  include <sys/wait.h>
+#  include <unistd.h>
+#endif
 
 namespace {
+#ifndef _WIN32
 constexpr int kReadEnd  = 0;
 constexpr int kWriteEnd = 1;
+#endif
 }  // namespace
 
 CryptoProxy::CryptoProxy() = default;
 CryptoProxy::~CryptoProxy() { stop(); }
+
+#ifdef _WIN32
+
+#ifndef WIN32_LEAN_AND_MEAN
+#  define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#  define NOMINMAX
+#endif
+#include <windows.h>
+
+#include <vector>
+
+void CryptoProxy::start(const std::string& script_path, const std::string& python_exe) {
+    if (process_handle_ != nullptr) {
+        throw std::runtime_error("CryptoProxy::start called but subprocess is already running");
+    }
+
+    SECURITY_ATTRIBUTES sa{};
+    sa.nLength              = sizeof(sa);
+    sa.bInheritHandle       = TRUE;
+    sa.lpSecurityDescriptor = nullptr;
+
+    HANDLE child_stdin_read   = nullptr;
+    HANDLE child_stdin_write  = nullptr;
+    HANDLE child_stdout_read  = nullptr;
+    HANDLE child_stdout_write = nullptr;
+
+    if (!CreatePipe(&child_stdin_read, &child_stdin_write, &sa, 0)) {
+        throw std::runtime_error("CryptoProxy: CreatePipe (stdin) failed with error " +
+                                 std::to_string(GetLastError()));
+    }
+    // The parent-side write end must not be inherited so the child doesn't hold
+    // an extra copy of its own stdin that would prevent EOF from being delivered.
+    SetHandleInformation(child_stdin_write, HANDLE_FLAG_INHERIT, 0);
+
+    if (!CreatePipe(&child_stdout_read, &child_stdout_write, &sa, 0)) {
+        CloseHandle(child_stdin_read);
+        CloseHandle(child_stdin_write);
+        throw std::runtime_error("CryptoProxy: CreatePipe (stdout) failed with error " +
+                                 std::to_string(GetLastError()));
+    }
+    SetHandleInformation(child_stdout_read, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOA si{};
+    si.cb         = sizeof(si);
+    si.hStdInput  = child_stdin_read;
+    si.hStdOutput = child_stdout_write;
+    si.hStdError  = GetStdHandle(STD_ERROR_HANDLE);
+    si.dwFlags    = STARTF_USESTDHANDLES;
+
+    // CreateProcessA requires a mutable command-line buffer.
+    std::string       cmd_str = python_exe + " " + script_path;
+    std::vector<char> cmd_buf(cmd_str.begin(), cmd_str.end());
+    cmd_buf.push_back('\0');
+
+    PROCESS_INFORMATION pi{};
+    BOOL ok = CreateProcessA(
+        nullptr,         // derive executable from cmd_buf
+        cmd_buf.data(),
+        nullptr,         // process security attributes
+        nullptr,         // thread security attributes
+        TRUE,            // inherit handles
+        0,               // creation flags
+        nullptr,         // inherit parent environment
+        nullptr,         // inherit parent working directory
+        &si,
+        &pi);
+
+    // Child-side pipe ends are no longer needed in the parent.
+    CloseHandle(child_stdin_read);
+    CloseHandle(child_stdout_write);
+
+    if (!ok) {
+        CloseHandle(child_stdin_write);
+        CloseHandle(child_stdout_read);
+        throw std::runtime_error("CryptoProxy: CreateProcess failed with error " +
+                                 std::to_string(GetLastError()));
+    }
+
+    CloseHandle(pi.hThread);
+
+    stdin_handle_   = child_stdin_write;
+    stdout_handle_  = child_stdout_read;
+    process_handle_ = pi.hProcess;
+}
+
+void CryptoProxy::stop() {
+    // Closing the write end of the stdin pipe delivers EOF to the child, which
+    // ends its `for line in sys.stdin:` loop and lets it exit cleanly.
+    if (stdin_handle_ != nullptr) {
+        CloseHandle(static_cast<HANDLE>(stdin_handle_));
+        stdin_handle_ = nullptr;
+    }
+    if (stdout_handle_ != nullptr) {
+        CloseHandle(static_cast<HANDLE>(stdout_handle_));
+        stdout_handle_ = nullptr;
+    }
+    if (process_handle_ != nullptr) {
+        TerminateProcess(static_cast<HANDLE>(process_handle_), 1);
+        WaitForSingleObject(static_cast<HANDLE>(process_handle_), INFINITE);
+        CloseHandle(static_cast<HANDLE>(process_handle_));
+        process_handle_ = nullptr;
+    }
+    read_buf_.clear();
+}
+
+std::string CryptoProxy::send_recv(const std::string& line) {
+    if (stdin_handle_ == nullptr || stdout_handle_ == nullptr) {
+        throw std::runtime_error("CryptoProxy::send_recv called before start()");
+    }
+
+    const char* data      = line.data();
+    DWORD       remaining = static_cast<DWORD>(line.size());
+    while (remaining > 0) {
+        DWORD written = 0;
+        if (!WriteFile(static_cast<HANDLE>(stdin_handle_), data, remaining, &written, nullptr)) {
+            throw std::runtime_error("CryptoProxy: WriteFile to subprocess failed with error " +
+                                     std::to_string(GetLastError()));
+        }
+        data      += written;
+        remaining -= written;
+    }
+    return read_line();
+}
+
+std::string CryptoProxy::read_line() {
+    for (;;) {
+        const auto newline = read_buf_.find('\n');
+        if (newline != std::string::npos) {
+            std::string result = read_buf_.substr(0, newline);
+            read_buf_.erase(0, newline + 1);
+            return result;
+        }
+
+        char  buf[4096];
+        DWORD n = 0;
+        if (!ReadFile(static_cast<HANDLE>(stdout_handle_), buf, sizeof(buf), &n, nullptr)) {
+            DWORD err = GetLastError();
+            if (err == ERROR_BROKEN_PIPE) {
+                if (!read_buf_.empty()) {
+                    std::string result = read_buf_;
+                    read_buf_.clear();
+                    return result;
+                }
+                throw std::runtime_error(
+                    "CryptoProxy: subprocess closed the pipe before sending a response");
+            }
+            throw std::runtime_error("CryptoProxy: ReadFile from subprocess failed with error " +
+                                     std::to_string(GetLastError()));
+        }
+        if (n == 0) {
+            if (!read_buf_.empty()) {
+                std::string result = read_buf_;
+                read_buf_.clear();
+                return result;
+            }
+            throw std::runtime_error(
+                "CryptoProxy: subprocess closed the pipe before sending a response");
+        }
+        read_buf_.append(buf, static_cast<size_t>(n));
+    }
+}
+
+#else  // POSIX
 
 void CryptoProxy::start(const std::string& script_path, const std::string& python_exe) {
     if (subprocess_pid_ > 0) {
@@ -91,25 +260,6 @@ void CryptoProxy::stop() {
     read_buf_.clear();
 }
 
-nlohmann::json CryptoProxy::call(const std::string& method, const nlohmann::json& params) {
-    const nlohmann::json request = {{"method", method}, {"params", params}};
-    const std::string    reply   = send_recv(request.dump() + "\n");
-
-    nlohmann::json response;
-    try {
-        response = nlohmann::json::parse(reply);
-    } catch (const nlohmann::json::parse_error& e) {
-        throw std::runtime_error("CryptoProxy: malformed response from subprocess for method '" +
-                                 method + "': " + e.what());
-    }
-
-    if (response.contains("error")) {
-        throw std::runtime_error("CryptoProxy: subprocess error for method '" + method +
-                                 "': " + response["error"].get<std::string>());
-    }
-    return response.value("result", nlohmann::json::object());
-}
-
 std::string CryptoProxy::send_recv(const std::string& line) {
     if (stdin_fd_ < 0 || stdout_fd_ < 0) {
         throw std::runtime_error("CryptoProxy::send_recv called before start()");
@@ -163,6 +313,27 @@ std::string CryptoProxy::read_line() {
         }
         read_buf_.append(buf, static_cast<size_t>(n));
     }
+}
+
+#endif  // _WIN32 / POSIX
+
+nlohmann::json CryptoProxy::call(const std::string& method, const nlohmann::json& params) {
+    const nlohmann::json request = {{"method", method}, {"params", params}};
+    const std::string    reply   = send_recv(request.dump() + "\n");
+
+    nlohmann::json response;
+    try {
+        response = nlohmann::json::parse(reply);
+    } catch (const nlohmann::json::parse_error& e) {
+        throw std::runtime_error("CryptoProxy: malformed response from subprocess for method '" +
+                                 method + "': " + e.what());
+    }
+
+    if (response.contains("error")) {
+        throw std::runtime_error("CryptoProxy: subprocess error for method '" + method +
+                                 "': " + response["error"].get<std::string>());
+    }
+    return response.value("result", nlohmann::json::object());
 }
 
 // ── DEK lifecycle ──────────────────────────────────────────────────────────────
