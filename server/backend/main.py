@@ -52,4 +52,5 @@ def main() -> None:
         host=config.services.backend.host,
         port=config.services.backend.internal_port,
         root_path="/backend",
+        log_config=None,
     )
