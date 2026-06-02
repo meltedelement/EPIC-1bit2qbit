@@ -23,9 +23,9 @@ public:
     // TODO: thread-safe — use ScreenInteractive::Post() once Connection fires callbacks.
     void push_status(std::string msg);
 
-    // Append a received message to the conversation with sender.
-    // TODO: thread-safe — same caveat as push_status.
+    // Append an incoming message from sender, or an outbound message to recipient.
     void push_message(const std::string& sender, const std::string& body);
+    void push_sent_message(const std::string& recipient, const std::string& body);
 
     // Pre-populate conversation history before switching to the chat screen.
     // Must be called before advance_to_chat().
@@ -41,7 +41,7 @@ private:
     AppCallbacks cbs_;
     std::string  status_msg_;
 
-    int         screen_{0};        // 0=login, 1=chat
+    int         active_screen_{0};  // 0=login, 1=chat
     std::string local_username_;
 
     std::string login_username_;

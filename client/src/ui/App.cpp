@@ -1,4 +1,5 @@
 #include "ui/App.h"
+#include "log.h"
 
 #include <algorithm>
 #include <chrono>
@@ -32,6 +33,7 @@ int64_t now_ms() {
 App::App(AppCallbacks cbs) : cbs_{std::move(cbs)} {}
 
 void App::push_status(std::string msg) {
+    epic_log("push_status: " + msg);
     if (screen_ptr_) {
         screen_ptr_->Post([this, m = std::move(msg)]() mutable { status_msg_ = std::move(m); });
     } else {
@@ -60,6 +62,27 @@ void App::push_message(const std::string& sender, const std::string& body) {
         update();
 }
 
+void App::push_sent_message(const std::string& recipient, const std::string& body) {
+    auto update = [this, recipient, body] {
+        auto it = std::find_if(conversations_.begin(), conversations_.end(),
+                               [&](const Conversation& c) { return c.peer() == recipient; });
+        if (it == conversations_.end()) {
+            conversations_.emplace_back(Conversation{recipient});
+            conv_names_.push_back(recipient);
+            it = conversations_.end() - 1;
+        }
+        Message m;
+        m.peer      = recipient;
+        m.recipient = recipient;  // recipient != local_username_ → renders as "you"
+        m.body      = body;
+        it->add_message(std::move(m));
+    };
+    if (screen_ptr_)
+        screen_ptr_->Post(update);
+    else
+        update();
+}
+
 void App::set_conversations(std::vector<Conversation> convs) {
     conversations_ = std::move(convs);
     conv_names_.clear();
@@ -70,7 +93,7 @@ void App::set_conversations(std::vector<Conversation> convs) {
 
 void App::advance_to_chat(std::string username) {
     local_username_ = std::move(username);
-    screen_ = 1;
+    active_screen_ = 1;
 }
 
 void App::seed_placeholder_data() {
@@ -291,7 +314,7 @@ void App::run() {
     });
 
     // ── Root ──────────────────────────────────────────────────────────────────
-    auto root = Container::Tab(Components{login_renderer, chat_renderer}, &screen_);
+    auto root = Container::Tab(Components{login_renderer, chat_renderer}, &active_screen_);
     screen_ptr_ = &screen;
     screen.Loop(root);
     screen_ptr_ = nullptr;

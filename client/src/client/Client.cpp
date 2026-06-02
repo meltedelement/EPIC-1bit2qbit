@@ -18,6 +18,7 @@
 #include "messaging/Message.h"
 #include "messaging/MessageStore.h"
 #include "ui/App.h"
+#include "log.h"
 
 namespace {
 
@@ -147,6 +148,7 @@ Client::Client(const std::string& host, uint16_t port)
 Client::~Client() = default;
 
 void Client::run() {
+    epic_log("Client::run start");
     // Build the crypto subprocess bridge, local store, and the UI.
     crypto_ = std::make_unique<CryptoProxy>();
     store_  = std::make_unique<MessageStore>("epic-client.db");
@@ -203,6 +205,7 @@ void Client::do_register(const std::string& username, const std::string& auth_pa
 
 void Client::do_login(const std::string& username, const std::string& auth_password,
                       const std::string& key_pin) {
+    epic_log("do_login: user=" + username);
     try {
         // Load the persisted DEK blob if we don't have it in memory already.
         if (encrypted_dek_.is_null()) {
@@ -258,13 +261,16 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
         app_->advance_to_chat(username);
         app_->push_status("Logged in as '" + username + "' — session open.");
     } catch (const std::exception& e) {
+        epic_log("do_login: exception: " + std::string(e.what()));
         app_->push_status(std::string("Login failed: ") + e.what());
         connection_.reset();
     }
 }
 
 void Client::do_send(const std::string& recipient, const std::string& plaintext) {
+    epic_log("do_send: to=" + recipient + " text=" + plaintext);
     if (!connection_ || !connection_->is_connected()) {
+        epic_log("do_send: not connected");
         app_->push_status("Not connected — log in first.");
         return;
     }
@@ -272,12 +278,10 @@ void Client::do_send(const std::string& recipient, const std::string& plaintext)
         std::lock_guard<std::mutex> lk(mutex_);
         auto it = conversations_.find(recipient);
         if (it != conversations_.end() && !it->second.ratchet_state().empty()) {
-            // Established session — advance the ratchet and send.
+            epic_log("do_send: established session, calling encrypt_and_send");
             encrypt_and_send(it->second, plaintext);
         } else {
-            // First contact — we need the recipient's key bundle before we can
-            // derive a shared secret. Stash the text and ask the server; the send
-            // completes in on_key_bundle_response() when the bundle arrives.
+            epic_log("do_send: no session yet, requesting key bundle for " + recipient);
             pending_sends_[recipient].push_back(plaintext);
             const nlohmann::json frame = {
                 {"type", "request_key_bundle"},
@@ -286,6 +290,7 @@ void Client::do_send(const std::string& recipient, const std::string& plaintext)
             connection_->send_text(frame.dump());
         }
     } catch (const std::exception& e) {
+        epic_log("do_send: exception: " + std::string(e.what()));
         app_->push_status(std::string("Send failed: ") + e.what());
     }
 }
@@ -327,15 +332,18 @@ void Client::send_key_bundle(const nlohmann::json& bundle) {
 // ── Inbound (Connection read thread) ─────────────────────────────────────────────
 
 void Client::handle_ws_frame(const std::string& json_frame) {
+    epic_log("handle_ws_frame: raw=" + json_frame.substr(0, 120));
     nlohmann::json frame;
     try {
         frame = nlohmann::json::parse(json_frame);
     } catch (const std::exception&) {
+        epic_log("handle_ws_frame: parse failed");
         app_->push_status("Received malformed frame from server.");
         return;
     }
 
     const std::string type = frame.value("type", std::string{});
+    epic_log("handle_ws_frame: type=" + type);
     if (type == "deliver_message") {
         on_deliver_message(frame);
     } else if (type == "key_bundle_response") {
@@ -350,6 +358,7 @@ void Client::handle_ws_frame(const std::string& json_frame) {
 
 void Client::on_deliver_message(const nlohmann::json& frame) {
     const std::string sender = frame.value("sender", std::string{});
+    epic_log("on_deliver_message: from=" + sender);
     try {
         const nlohmann::json env = nlohmann::json::parse(frame.at("ciphertext").get<std::string>());
         const nlohmann::json& dr = env.at("dr");
@@ -403,12 +412,14 @@ void Client::on_deliver_message(const nlohmann::json& frame) {
         }
 
         const std::string body = message_to_body(plaintext_b64);
+        epic_log("on_deliver_message: decrypted body=" + body);
         Message msg;
         msg.peer      = sender;
         msg.recipient = current_user_;
         msg.body      = body;
         conv.add_message(msg);
         store_->save_message(msg);
+        epic_log("on_deliver_message: calling push_message");
         app_->push_message(sender, body);
     } catch (const std::exception& e) {
         app_->push_status("Failed to decrypt message from '" + sender + "': " + e.what());
@@ -417,10 +428,14 @@ void Client::on_deliver_message(const nlohmann::json& frame) {
 
 void Client::on_key_bundle_response(const nlohmann::json& frame) {
     const std::string peer = frame.value("username", std::string{});
+    epic_log("on_key_bundle_response: peer=" + peer);
     std::lock_guard<std::mutex> lk(mutex_);
 
     auto pending = pending_sends_.find(peer);
-    if (pending == pending_sends_.end()) return;  // a bundle we no longer need
+    if (pending == pending_sends_.end()) {
+        epic_log("on_key_bundle_response: no pending sends for " + peer);
+        return;
+    }
     std::vector<std::string> texts = std::move(pending->second);
     pending_sends_.erase(pending);
 
@@ -443,12 +458,15 @@ void Client::on_key_bundle_response(const nlohmann::json& frame) {
 // ── Crypto/session helpers (mutex_ held by caller) ───────────────────────────────
 
 void Client::encrypt_and_send(Conversation& conv, const std::string& plaintext) {
+    epic_log("encrypt_and_send: peer=" + conv.peer());
     nlohmann::json rstate    = nlohmann::json::parse(conv.ratchet_state());
     const nlohmann::json enc = crypto_->encrypt_message(rstate, content_to_message(plaintext),
                                                         conv.associated_data());
     conv.set_ratchet_state(enc.at("ratchet_state").dump());
     store_->save_ratchet_state(conv.peer(), conv.ratchet_state());
     send_chat_frame(conv.peer(), enc.at("encrypted_message"), nullptr);
+    epic_log("encrypt_and_send: frame sent, pushing to UI");
+    app_->push_sent_message(conv.peer(), plaintext);
 }
 
 void Client::start_session_and_send(const std::string& peer, const nlohmann::json& bundle,
@@ -485,6 +503,7 @@ void Client::start_session_and_send(const std::string& peer, const nlohmann::jso
 
     const nlohmann::json header = ss.at("header");
     send_chat_frame(peer, enc.at("encrypted_message"), &header);
+    app_->push_sent_message(peer, plaintext);
 }
 
 void Client::send_chat_frame(const std::string& recipient, const nlohmann::json& dr_message,

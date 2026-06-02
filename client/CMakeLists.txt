@@ -79,13 +79,16 @@ target_link_libraries(epic-client PRIVATE
     Boost::headers          # Boost.Asio is header-only
     Threads::Threads
     SQLite::SQLite3
-    ws2_32
     ftxui::screen
     ftxui::dom
     ftxui::component
     nlohmann_json::nlohmann_json
     CLI11::CLI11
 )
+
+if(WIN32)
+    target_link_libraries(epic-client PRIVATE ws2_32)
+endif()
 
 target_compile_options(epic-client PRIVATE
     $<$<CONFIG:Debug>:-Wall;-Wextra;-Wpedantic;-g>
