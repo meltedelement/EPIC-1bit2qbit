@@ -104,8 +104,10 @@ class TestRegisterRateLimit:
     def _make_app(self) -> tuple[FastAPI, TestClient]:
         app = FastAPI()
         app.state.rate_limiter = RateLimiter(max_window_seconds=900)
+
         def _db():
             return MagicMock()
+
         app.dependency_overrides[get_db] = _db
         app.include_router(auth_router)
         return app, TestClient(app)
