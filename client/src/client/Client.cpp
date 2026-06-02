@@ -451,6 +451,7 @@ void Client::on_key_bundle_response(const nlohmann::json& frame) {
             }
         }
     } catch (const std::exception& e) {
+        epic_log("on_key_bundle_response: exception for peer=" + peer + ": " + e.what());
         app_->push_status("Failed to start session with '" + peer + "': " + e.what());
     }
 }
@@ -471,13 +472,16 @@ void Client::encrypt_and_send(Conversation& conv, const std::string& plaintext) 
 
 void Client::start_session_and_send(const std::string& peer, const nlohmann::json& bundle,
                                     const std::string& plaintext) {
+    epic_log("start_session_and_send: peer=" + peer);
     const std::string peer_ik = bundle.value("identity_key", std::string{});
+    epic_log("start_session_and_send: peer_ik=" + peer_ik.substr(0, 16) + "...");
 
     // Adapt the server's key_bundle_response (a single one_time_pre_key, possibly
     // null) to the bob_bundle shape the subprocess's X3DH expects (a pre_keys list).
     nlohmann::json otpks = nlohmann::json::array();
     if (bundle.contains("one_time_pre_key") && !bundle.at("one_time_pre_key").is_null())
         otpks.push_back(bundle.at("one_time_pre_key"));
+    epic_log("start_session_and_send: otpk_count=" + std::to_string(otpks.size()));
     const nlohmann::json bob_bundle = {
         {"identity_key", peer_ik},
         {"signed_pre_key", bundle.at("signed_pre_key")},
@@ -485,12 +489,15 @@ void Client::start_session_and_send(const std::string& peer, const nlohmann::jso
         {"pre_keys", otpks},
     };
 
+    epic_log("start_session_and_send: calling get_shared_secret_active");
     const nlohmann::json ss = crypto_->get_shared_secret_active(encrypted_state_, bob_bundle);
     encrypted_state_ = ss.at("encrypted_state");
+    epic_log("start_session_and_send: X3DH done, calling encrypt_initial_message");
     const nlohmann::json enc = crypto_->encrypt_initial_message(
         ss.at("shared_secret").get<std::string>(),
         ss.at("bob_initial_ratchet_pub").get<std::string>(), content_to_message(plaintext),
         ss.at("associated_data").get<std::string>());
+    epic_log("start_session_and_send: encrypt done");
 
     Conversation& conv = conversations_.try_emplace(peer, Conversation{peer}).first->second;
     conv.set_associated_data(ss.at("associated_data").get<std::string>());
