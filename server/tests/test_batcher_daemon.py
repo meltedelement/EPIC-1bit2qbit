@@ -46,8 +46,8 @@ class TestRunBatch:
 
     def test_message_format_is_mid_colon_ciphertext(self):
         rows = [
-            _mock_row(id=1, mid="alice:bob:1000", ciphertext="ct1"),
-            _mock_row(id=2, mid="alice:carol:2000", ciphertext="ct2"),
+            _mock_row(row_id=1, mid="alice:bob:1000", ciphertext="ct1"),
+            _mock_row(row_id=2, mid="alice:carol:2000", ciphertext="ct2"),
         ]
         with patch(
             _BATCHER_SL, side_effect=[_session_cm(_read_db(rows)), _session_cm(_write_db())]
@@ -57,7 +57,7 @@ class TestRunBatch:
         assert mock_bc.call_args[0][0] == ["alice:bob:1000:ct1", "alice:carol:2000:ct2"]
 
     def test_returns_row_count_on_success(self):
-        rows = [_mock_row(id=i) for i in range(3)]
+        rows = [_mock_row(row_id=i) for i in range(3)]
         with patch(
             _BATCHER_SL, side_effect=[_session_cm(_read_db(rows)), _session_cm(_write_db())]
         ):

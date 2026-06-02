@@ -93,10 +93,6 @@ class TestCleanupLoop:
 
     def test_cancellation_exits_loop_cleanly(self):
         """CancelledError from sleep must propagate out (not be swallowed)."""
-
-        async def fake_sleep(_):
-            raise asyncio.CancelledError
-
         with patch("backend.daemons.ttl_cleanup._run_cleanup", return_value=0):
             with patch(_TTL_SLEEP, side_effect=_CancelAfter(1)):
                 with pytest.raises(asyncio.CancelledError):
