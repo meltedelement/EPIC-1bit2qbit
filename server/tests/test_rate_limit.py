@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from backend.database.db import get_db
-from backend.rate_limit import RateLimiter
+from backend.rate_limit import RateLimiter, client_ip
 from backend.routes.auth import router as auth_router
 from backend.routes.ws import router as ws_router
 from backend.session import SessionRegistry
@@ -13,6 +13,26 @@ from starlette.websockets import WebSocketDisconnect
 
 _AUTH_CFG = "backend.routes.auth.config"
 _WS_CFG = "backend.routes.ws.config"
+
+
+class TestClientIp:
+    def test_returns_x_real_ip_when_present(self):
+        headers = {"x-real-ip": "1.2.3.4"}
+        assert client_ip(headers, None) == "1.2.3.4"
+
+    def test_falls_back_to_socket_address_with_warning(self):
+        socket = MagicMock()
+        socket.host = "127.0.0.1"
+        with patch("backend.rate_limit.logger") as mock_log:
+            result = client_ip({}, socket)
+        assert result == "127.0.0.1"
+        mock_log.warning.assert_called_once()
+
+    def test_x_real_ip_takes_priority_over_socket_address(self):
+        headers = {"x-real-ip": "5.6.7.8"}
+        socket = MagicMock()
+        socket.host = "127.0.0.1"
+        assert client_ip(headers, socket) == "5.6.7.8"
 
 
 class TestRateLimiterHit:
@@ -48,6 +68,15 @@ class TestRateLimiterHit:
                 rl.hit("ip", 3, 60)
         with patch("backend.rate_limit.time.monotonic", return_value=t + 61.0):
             assert rl.hit("ip", 3, 60) == 0
+
+    def test_expired_key_is_removed_from_map(self):
+        rl = RateLimiter()
+        t = 1000.0
+        with patch("backend.rate_limit.time.monotonic", return_value=t):
+            rl.hit("ip", 5, 60)
+        with patch("backend.rate_limit.time.monotonic", return_value=t + 61.0):
+            rl.hit("ip", 5, 60)  # triggers prune of the now-expired entry
+        assert "ip" not in rl._windows
 
 
 class TestRateLimiterIsBlocked:

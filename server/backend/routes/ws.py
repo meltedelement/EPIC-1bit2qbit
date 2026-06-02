@@ -7,7 +7,7 @@ from pydantic import TypeAdapter, ValidationError
 from ..auth.credentials import verify_credentials
 from ..config.config import config
 from ..handlers import WsContext, key_bundle, messaging
-from ..rate_limit import RateLimiter
+from ..rate_limit import RateLimiter, client_ip
 from ..schemas.http import LoginFrame
 from ..schemas.ws import ErrorFrame, InboundFrame
 from ..session import SessionRegistry
@@ -24,7 +24,7 @@ _frame_adapter: TypeAdapter[InboundFrame] = TypeAdapter(InboundFrame)
 async def _authenticate(websocket: WebSocket) -> str | None:
     """Read first frame and return username on success, or close and return None."""
     limiter: RateLimiter = websocket.app.state.rate_limiter
-    ip = websocket.client.host if websocket.client else "unknown"
+    ip = client_ip(websocket.headers, websocket.client)
     rl = config.rate_limiting
 
     retry = limiter.is_blocked(ip, rl.ws_auth_fail_limit, rl.ws_auth_fail_window_seconds)
