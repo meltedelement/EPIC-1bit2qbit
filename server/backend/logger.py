@@ -98,6 +98,7 @@ def setup_logging(config, script_path=None):
     # Drop only data-frame lines; keep HTTP upgrade headers and connection-state
     # lines (= / %) which are useful for debugging.
     import re as _re
+
     _FRAME_RE = _re.compile(r"^[<>] (?:TEXT|BINARY|PING|PONG) ")
 
     class _SuppressWsFrames(logging.Filter):
