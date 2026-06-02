@@ -3,7 +3,9 @@
 Benchmark and compare the old vs new Argon2id parameters used for DEK key
 derivation, showing timing and offline-attack resistance.
 """
+
 import time
+
 from argon2.low_level import Type, hash_secret_raw
 
 CONFIGS = [
@@ -28,22 +30,22 @@ CONFIGS = [
 ]
 
 SECRET = b"hunter2"
-SALT   = b"benchmarksalt123benchmarksalt123"  # 32 bytes
+SALT = b"benchmarksalt123benchmarksalt123"  # 32 bytes
 HASH_LEN = 32
 
 # Rough attacker throughput estimates (hashes/sec on dedicated hardware).
 # Argon2id with high memory is intentionally hard to parallelise on GPUs.
 # These are conservative estimates for a well-funded attacker.
 ATTACKER_RIGS = [
-    ("Laptop (1 core)",          1),
-    ("High-end GPU rig",        10),
-    ("Nation-state cluster",   100),
+    ("Laptop (1 core)", 1),
+    ("High-end GPU rig", 10),
+    ("Nation-state cluster", 100),
 ]
 
 # Typical PIN/password search spaces
 SEARCH_SPACES = [
-    ("4-digit PIN (10^4)",          10_000),
-    ("6-digit PIN (10^6)",       1_000_000),
+    ("4-digit PIN (10^4)", 10_000),
+    ("6-digit PIN (10^6)", 1_000_000),
     ("8-char lowercase (26^8)", 208_827_064_576),
     ("Random 6-word passphrase (7776^6)", 7_776**6),
 ]
@@ -88,8 +90,10 @@ def run():
 
     for cfg in CONFIGS:
         print(f"\n  [{cfg['label']}]")
-        print(f"    memory={cfg['memory_cost']//1024} MiB  "
-              f"time_cost={cfg['time_cost']}  parallelism={cfg['parallelism']}")
+        print(
+            f"    memory={cfg['memory_cost']//1024} MiB  "
+            f"time_cost={cfg['time_cost']}  parallelism={cfg['parallelism']}"
+        )
         print("    Timing... ", end="", flush=True)
 
         # Warm-up then measure
@@ -135,7 +139,9 @@ def run():
     print("=" * 62)
     new_t = results[0][1]
     for cfg, elapsed in results[1:]:
-        print(f"  '{cfg['label']}' is {elapsed/new_t:.1f}x slower than new for both user and attacker.")
+        print(
+            f"  '{cfg['label']}' is {elapsed/new_t:.1f}x slower than new for both user and attacker."
+        )
     print(f"  All configs remain strong against offline attacks on realistic PINs.")
     print()
 
