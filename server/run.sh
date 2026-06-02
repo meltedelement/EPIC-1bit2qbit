@@ -100,7 +100,7 @@ start_backend() {
     activate_venv
     load_env
     info "Starting backend…"
-    nohup epic-api >> "$LOG_DIR/backend.stdout.log" 2>&1 &
+    nohup epic-1bit2qbit-backend >> "$LOG_DIR/backend.stdout.log" 2>&1 &
     local new_pid=$!
     echo "$new_pid" > "$BACKEND_PID"
 
@@ -174,6 +174,18 @@ stop_verify() {
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 cmd_setup() {
+    info "Configuring MySQL database…"
+    if ! command -v mysql &>/dev/null; then
+        die "mysql client not found — install MySQL first (sudo apt install mysql-server)"
+    fi
+    sudo mysql <<'SQL'
+CREATE DATABASE IF NOT EXISTS epic CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'epic'@'localhost' IDENTIFIED WITH auth_socket;
+GRANT ALL PRIVILEGES ON epic.* TO 'epic'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+    ok "MySQL database and user ready"
+
     if [[ ! -f "$SCRIPT_DIR/.venv/bin/activate" ]]; then
         info "Creating Python virtual environment (.venv)…"
         python3 -m venv "$SCRIPT_DIR/.venv"
