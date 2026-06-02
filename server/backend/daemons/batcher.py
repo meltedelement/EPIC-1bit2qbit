@@ -2,6 +2,8 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from datetime import timedelta
+
 from ..blockchain.batcher import add_to_blockchain
 from ..config.config import config
 from ..database.db import SessionLocal
@@ -11,12 +13,13 @@ logger = logging.getLogger(__name__)
 
 
 def _run_batch() -> int:
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    grace = timedelta(seconds=config.messaging.edit_grace_seconds)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - grace
 
     with SessionLocal() as db:
         rows = (
             db.query(BlockchainMessageQueue)
-            .filter(BlockchainMessageQueue.edit_deadline < now)
+            .filter(BlockchainMessageQueue.edit_deadline < cutoff)
             .order_by(BlockchainMessageQueue.created_at)
             .all()
         )

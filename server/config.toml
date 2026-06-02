@@ -9,7 +9,7 @@ host          = "127.0.0.1"
 # MySQL via Unix socket auth — no password, OS-level auth.
 # Socket path is the Ubuntu default; the API only runs on the team VM.
 [services.backend.db]
-url = "mysql+pymysql://epic@/epic?unix_socket=/var/run/mysqld/mysqld.sock"
+url = "mysql+pymysql://student@/epic?unix_socket=/var/run/mysqld/mysqld.sock"
 
 [messaging]
 edit_window_minutes = 10

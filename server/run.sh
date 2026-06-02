@@ -180,8 +180,8 @@ cmd_setup() {
     fi
     sudo mysql <<'SQL'
 CREATE DATABASE IF NOT EXISTS epic CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'epic'@'localhost' IDENTIFIED WITH auth_socket;
-GRANT ALL PRIVILEGES ON epic.* TO 'epic'@'localhost';
+CREATE USER IF NOT EXISTS 'student'@'localhost' IDENTIFIED WITH auth_socket;
+GRANT ALL PRIVILEGES ON epic.* TO 'student'@'localhost';
 FLUSH PRIVILEGES;
 SQL
     ok "MySQL database and user ready"
