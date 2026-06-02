@@ -24,7 +24,7 @@ class _CancelAfter:
         self.calls = 0
         self.n = n
 
-    async def __call__(self, _):
+    def __call__(self, _):
         self.calls += 1
         if self.calls >= self.n:
             raise asyncio.CancelledError
