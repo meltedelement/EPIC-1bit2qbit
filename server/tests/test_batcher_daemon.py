@@ -48,20 +48,26 @@ class TestRunBatch:
             _mock_row(id=1, mid="alice:bob:1000", ciphertext="ct1"),
             _mock_row(id=2, mid="alice:carol:2000", ciphertext="ct2"),
         ]
-        with patch(_BATCHER_SL, side_effect=[_session_cm(_read_db(rows)), _session_cm(_write_db())]):
+        with patch(
+            _BATCHER_SL, side_effect=[_session_cm(_read_db(rows)), _session_cm(_write_db())]
+        ):
             with patch(_ADD_TO_BC, return_value=_BATCH_RESULT) as mock_bc:
                 _run_batch()
         assert mock_bc.call_args[0][0] == ["alice:bob:1000:ct1", "alice:carol:2000:ct2"]
 
     def test_returns_row_count_on_success(self):
         rows = [_mock_row(id=i) for i in range(3)]
-        with patch(_BATCHER_SL, side_effect=[_session_cm(_read_db(rows)), _session_cm(_write_db())]):
+        with patch(
+            _BATCHER_SL, side_effect=[_session_cm(_read_db(rows)), _session_cm(_write_db())]
+        ):
             with patch(_ADD_TO_BC, return_value=_BATCH_RESULT):
                 assert _run_batch() == 3
 
     def test_commit_called_after_successful_blockchain_submission(self):
         write_db = _write_db()
-        with patch(_BATCHER_SL, side_effect=[_session_cm(_read_db([_mock_row()])), _session_cm(write_db)]):
+        with patch(
+            _BATCHER_SL, side_effect=[_session_cm(_read_db([_mock_row()])), _session_cm(write_db)]
+        ):
             with patch(_ADD_TO_BC, return_value=_BATCH_RESULT):
                 _run_batch()
         write_db.commit.assert_called_once()
@@ -90,7 +96,9 @@ class TestRunBatch:
 
     def test_delete_uses_synchronize_session_false(self):
         write_db = _write_db()
-        with patch(_BATCHER_SL, side_effect=[_session_cm(_read_db([_mock_row()])), _session_cm(write_db)]):
+        with patch(
+            _BATCHER_SL, side_effect=[_session_cm(_read_db([_mock_row()])), _session_cm(write_db)]
+        ):
             with patch(_ADD_TO_BC, return_value=_BATCH_RESULT):
                 _run_batch()
         write_db.query.return_value.filter.return_value.delete.assert_called_once_with(
@@ -127,6 +135,7 @@ class TestBatcherLoop:
 
     def test_sleep_called_after_failure(self):
         """Interval sleep must happen even when _run_batch raises."""
+
         async def fake_sleep(_):
             raise asyncio.CancelledError
 

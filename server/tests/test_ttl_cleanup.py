@@ -66,7 +66,9 @@ class TestCleanupLoop:
             if sleep_calls >= 2:
                 raise asyncio.CancelledError
 
-        with patch("backend.daemons.ttl_cleanup._run_cleanup", side_effect=[Exception("db down"), 0]):
+        with patch(
+            "backend.daemons.ttl_cleanup._run_cleanup", side_effect=[Exception("db down"), 0]
+        ):
             with patch(_TTL_SLEEP, side_effect=fake_sleep):
                 _run_loop(loop())
 
@@ -84,6 +86,7 @@ class TestCleanupLoop:
 
     def test_sleep_called_after_failure(self):
         """Sleep (and therefore retry) must happen even when _run_cleanup raises."""
+
         async def fake_sleep(_):
             raise asyncio.CancelledError
 
@@ -95,11 +98,13 @@ class TestCleanupLoop:
 
     def test_cancellation_exits_loop_cleanly(self):
         """CancelledError from sleep must propagate out (not be swallowed)."""
+
         async def fake_sleep(_):
             raise asyncio.CancelledError
 
         with patch("backend.daemons.ttl_cleanup._run_cleanup", return_value=0):
             with patch(_TTL_SLEEP, side_effect=fake_sleep):
                 import pytest
+
                 with pytest.raises(asyncio.CancelledError):
                     asyncio.run(loop())
