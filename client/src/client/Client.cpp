@@ -370,7 +370,10 @@ void Client::publish_key_bundle() {
     {
         std::lock_guard<std::mutex> lk(mutex_);
         if (encrypted_state_.is_null()) return;  // registered on another device
-        bundle = crypto_->get_bundle(encrypted_state_);
+        const nlohmann::json result = crypto_->get_bundle(encrypted_state_);
+        bundle           = result.at("bundle");
+        encrypted_state_ = result.at("encrypted_state");
+        store_->save_encrypted_state(current_user_, encrypted_state_.dump());
     }
     send_key_bundle(bundle);
 }
