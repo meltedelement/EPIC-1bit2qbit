@@ -66,15 +66,31 @@ nginx_reload() {
 
 colorize_nginx_logs() {
     awk '
-        /\[emerg\]|\[alert\]|\[crit\]|\[error\]/ { print "\033[1;31m" $0 "\033[0m"; fflush(); next }
-        /\[warn\]/                                { print "\033[1;33m" $0 "\033[0m"; fflush(); next }
-        /\[notice\]|\[info\]/                    { print "\033[1;32m" $0 "\033[0m"; fflush(); next }
-        /\[debug\]/                              { print "\033[0;36m" $0 "\033[0m"; fflush(); next }
-        /" 5[0-9][0-9] /                         { print "\033[1;31m" $0 "\033[0m"; fflush(); next }
-        /" 4[0-9][0-9] /                         { print "\033[1;33m" $0 "\033[0m"; fflush(); next }
-        /" 3[0-9][0-9] /                         { print "\033[1;36m" $0 "\033[0m"; fflush(); next }
-        /" 2[0-9][0-9] /                         { print "\033[1;32m" $0 "\033[0m"; fflush(); next }
-        { print; fflush() }
+    function fmt(c, level, time, src, msg,    reset) {
+        reset = "\033[0m"
+        printf "%s%-8s%s %s %s \342\200\224 %s\n", c, level, reset, time, src, msg
+        fflush()
+    }
+
+    # Access log: IP - user [DD/Mon/YYYY:HH:MM:SS tz] "METHOD URI PROTO" STATUS BYTES ...
+    /^[0-9]/ {
+        split($4, t, ":")
+        time   = t[2] ":" t[3] ":" t[4]
+        status = $9
+        msg    = $1 " - " $6 " " $7 " " $8 " " status " " $10
+        if      (status ~ /^5/) fmt("\033[1;31m", "ERROR",   time, "nginx.access", msg)
+        else if (status ~ /^4/) fmt("\033[1;33m", "WARNING", time, "nginx.access", msg)
+        else if (status ~ /^3/) fmt("\033[1;36m", "INFO",    time, "nginx.access", msg)
+        else                    fmt("\033[1;32m", "INFO",    time, "nginx.access", msg)
+        next
+    }
+
+    # Error log: severity in [brackets]
+    /\[emerg\]|\[alert\]|\[crit\]|\[error\]/ { print "\033[1;31m" $0 "\033[0m"; fflush(); next }
+    /\[warn\]/                                { print "\033[1;33m" $0 "\033[0m"; fflush(); next }
+    /\[notice\]|\[info\]/                    { print "\033[1;32m" $0 "\033[0m"; fflush(); next }
+    /\[debug\]/                              { print "\033[0;36m" $0 "\033[0m"; fflush(); next }
+    { print; fflush() }
     '
 }
 
@@ -301,7 +317,7 @@ cmd_logs() {
             tail -qFn0 "${backend_files[@]}" &
         fi
         sudo -v  # cache credentials before backgrounding — avoids a prompt inside &
-        sudo tail -Fn0 "${nginx_logs[@]}" | colorize_nginx_logs &
+        sudo tail -qFn0 "${nginx_logs[@]}" | colorize_nginx_logs &
         wait
     elif [[ "$DO_BACKEND" == true ]]; then
         if [[ ${#backend_files[@]} -eq 0 ]]; then exit 0; fi
@@ -309,7 +325,7 @@ cmd_logs() {
         exec tail -qFn0 "${backend_files[@]}"
     else
         info "Tailing nginx logs — Ctrl+C to stop"
-        sudo tail -Fn0 "${nginx_logs[@]}" | colorize_nginx_logs
+        sudo tail -qFn0 "${nginx_logs[@]}" | colorize_nginx_logs
     fi
 }
 
