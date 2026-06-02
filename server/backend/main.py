@@ -10,6 +10,7 @@ from .config.config import config
 from .daemons import batcher, ttl_cleanup
 from .database.db import Base, engine
 from .logger import setup_logging
+from .rate_limit import RateLimiter
 from .routes import auth, ws
 from .session import SessionRegistry
 
@@ -24,6 +25,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
 
     application.state.sessions = SessionRegistry()
     logger.info("Session registry initialized")
+
+    application.state.rate_limiter = RateLimiter()
+    logger.info("Rate limiter initialized")
 
     batcher_task = asyncio.create_task(batcher.loop(), name="batcher")
     ttl_task = asyncio.create_task(ttl_cleanup.loop(), name="ttl-cleanup")
