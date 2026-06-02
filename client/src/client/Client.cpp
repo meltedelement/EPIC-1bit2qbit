@@ -223,10 +223,16 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
             }
             encrypted_dek_ = nlohmann::json::parse(*stored);
         }
-        {
+        try {
             std::lock_guard<std::mutex> lk(mutex_);
             crypto_->unlock_dek(key_pin, username, encrypted_dek_);
+        } catch (const std::exception&) {
+            ++pin_fail_count_;
+            int delay = std::min(5 * (1 << (pin_fail_count_ - 1)), 300);
+            app_->start_lockout(delay);
+            return;
         }
+        pin_fail_count_ = 0;  // reset on success
 
         // Load persisted X3DH state (needed to establish new sessions after restart).
         if (encrypted_state_.is_null()) {

@@ -67,6 +67,7 @@ private:
     uint16_t                       port_;
     std::string                    current_user_;
     std::string                    auth_password_;
+    int                            pin_fail_count_{0};
 
     std::atomic<bool>              quit_{false};
     std::atomic<int>               reconnect_attempt_{0};

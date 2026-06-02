@@ -34,6 +34,24 @@ int64_t now_ms() {
 
 App::App(AppCallbacks cbs) : cbs_{std::move(cbs)} {}
 
+void App::start_lockout(int seconds) {
+    if (lockout_thread_.joinable()) lockout_thread_.join();
+    lockout_active_    = true;
+    lockout_remaining_ = seconds;
+    lockout_thread_ = std::thread([this] {
+        while (lockout_remaining_ > 0 && !lockout_quit_) {
+            push_status("Incorrect PIN — try again in " +
+                        std::to_string(lockout_remaining_.load()) + "s.");
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            --lockout_remaining_;
+        }
+        if (!lockout_quit_) {
+            lockout_active_ = false;
+            push_status("");
+        }
+    });
+}
+
 void App::push_status(std::string msg) {
     epic_log("push_status: " + msg);
     if (screen_ptr_) {
@@ -136,10 +154,21 @@ void App::run() {
     pwd_opt.password = true;
 
     auto username_input = Input(&login_username_, "username");
-    auto password_input = Input(&login_password_, "password",   pwd_opt);
-    auto key_pin_input  = Input(&login_key_pin_,  "key PIN",    pwd_opt);
+    auto password_input = Input(&login_password_, "password", pwd_opt);
+    auto key_pin_input  = Input(&login_key_pin_,  "6-digit PIN", pwd_opt);
+
+    // Restrict PIN input to digits only, capped at 6 characters.
+    key_pin_input = CatchEvent(key_pin_input, [&](Event e) {
+        if (e.is_character()) {
+            char c = e.character().empty() ? '\0' : e.character()[0];
+            if (!std::isdigit(static_cast<unsigned char>(c))) return true;
+            if (login_key_pin_.size() >= 6) return true;
+        }
+        return false;
+    });
 
     auto login_btn = Button(" Login ", [&] {
+        if (lockout_active_) return;
         if (login_username_.empty() || login_password_.empty() || login_key_pin_.empty()) return;
         if (cbs_.on_login) {
             cbs_.on_login(login_username_, login_password_, login_key_pin_);
@@ -150,6 +179,10 @@ void App::run() {
 
     auto register_btn = Button(" Register ", [&] {
         if (login_username_.empty() || login_password_.empty() || login_key_pin_.empty()) return;
+        if (login_key_pin_.size() != 6) {
+            push_status("Key PIN must be exactly 6 digits.");
+            return;
+        }
         if (cbs_.on_register) {
             cbs_.on_register(login_username_, login_password_, login_key_pin_);
         } else {
@@ -333,5 +366,7 @@ void App::run() {
     screen.Loop(root);
     screen_ptr_ = nullptr;
     running = false;
+    lockout_quit_ = true;
     refresh_thread.join();
+    if (lockout_thread_.joinable()) lockout_thread_.join();
 }

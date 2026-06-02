@@ -19,13 +19,13 @@ public:
     explicit App(AppCallbacks cbs = {});
     void run();
 
-    // Show a transient status line (e.g. "Login failed: bad PIN").
-    // TODO: thread-safe — use ScreenInteractive::Post() once Connection fires callbacks.
     void push_status(std::string msg);
-
-    // Append an incoming message from sender, or an outbound message to recipient.
     void push_message(const std::string& sender, const std::string& body);
     void push_sent_message(const std::string& recipient, const std::string& body);
+
+    // Called by Client on a wrong-PIN attempt. Disables the login button and
+    // shows a countdown for `seconds` seconds before re-enabling it.
+    void start_lockout(int seconds);
 
     // Pre-populate conversation history before switching to the chat screen.
     // Must be called before advance_to_chat().
@@ -49,6 +49,11 @@ private:
     std::string login_key_pin_;    // DEK key PIN (registration only)
 
     ftxui::ScreenInteractive* screen_ptr_{nullptr};
+
+    std::atomic<bool>         lockout_active_{false};
+    std::atomic<int>          lockout_remaining_{0};
+    std::atomic<bool>         lockout_quit_{false};
+    std::thread               lockout_thread_;
 
     std::vector<Conversation> conversations_;
     std::vector<std::string>  conv_names_;    // kept in sync with conversations_
