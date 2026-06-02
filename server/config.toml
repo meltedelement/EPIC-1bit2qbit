@@ -15,6 +15,7 @@ url = "mysql+pymysql://epic@/epic?unix_socket=/var/run/mysqld/mysqld.sock"
 edit_window_minutes = 10
 edit_grace_seconds  = 10
 message_ttl_days    = 30
+ttl_cleanup_interval_hours = 1
 
 [blockchain]
 batch_interval_minutes = 5
