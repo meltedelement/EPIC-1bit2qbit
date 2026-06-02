@@ -18,7 +18,7 @@ message_ttl_days    = 30
 ttl_cleanup_interval_hours = 1
 
 [blockchain]
-batch_interval_minutes = 5
+batch_interval_minutes = 30
 
 [logging.stdout]
 enabled     = true
