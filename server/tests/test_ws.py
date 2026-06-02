@@ -5,6 +5,7 @@ import pytest
 from argon2 import PasswordHasher
 from backend.auth.credentials import verify_credentials
 from backend.crypto.password import hash_password
+from backend.rate_limit import RateLimiter
 from backend.routes.ws import router
 from backend.session import SessionRegistry
 from fastapi import FastAPI
@@ -17,6 +18,7 @@ _MSG_SL = "backend.handlers.messaging.SessionLocal"
 
 _app = FastAPI()
 _app.state.sessions = SessionRegistry()
+_app.state.rate_limiter = RateLimiter()
 _app.include_router(router)
 _client = TestClient(_app)
 
