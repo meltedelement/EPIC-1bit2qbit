@@ -288,18 +288,13 @@ cmd_status() {
 cmd_logs() {
     parse_flags "$@"
 
-    # Collect backend log files: structured logs first, then stdout capture
+    # Collect backend log files: only stdout capture
     local backend_files=()
     if [[ "$DO_BACKEND" == true ]]; then
         mkdir -p "$LOG_DIR"
-        while IFS= read -r -d '' f; do
-            backend_files+=("$f")
-        done < <(find "$LOG_DIR" -maxdepth 1 -name "*.log" \
-                     -not -name "backend.stdout.log" -print0 2>/dev/null | sort -z)
         if [[ -f "$LOG_DIR/backend.stdout.log" ]]; then
             backend_files+=("$LOG_DIR/backend.stdout.log")
-        fi
-        if [[ ${#backend_files[@]} -eq 0 ]]; then
+        else
             warn "No backend log files found yet — has the backend been started?"
         fi
     fi
