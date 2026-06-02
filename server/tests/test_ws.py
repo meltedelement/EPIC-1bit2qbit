@@ -136,7 +136,7 @@ class TestWebSocketMessages:
             with patch(_MSG_SL, return_value=_empty_drain()):
                 with _client.websocket_connect("/ws") as ws:
                     ws.send_text(_login_frame())
-                    ws.send_text("x" * 4097)
+                    ws.send_text("x" * 16385)
                     with pytest.raises(WebSocketDisconnect) as exc:
                         ws.receive_text()
         assert exc.value.code == 1009
@@ -146,4 +146,4 @@ class TestWebSocketMessages:
             with patch(_MSG_SL, return_value=_empty_drain()):
                 with _client.websocket_connect("/ws") as ws:
                     ws.send_text(_login_frame())
-                    ws.send_text("x" * 4096)
+                    ws.send_text("x" * 16384)
