@@ -33,15 +33,18 @@ def _run_batch() -> int:
     results = add_to_blockchain(messages)
 
     with SessionLocal() as db:
-        db.query(BlockchainMessageQueue).filter(
-            BlockchainMessageQueue.id.in_(row_ids)
-        ).delete(synchronize_session=False)
+        db.query(BlockchainMessageQueue).filter(BlockchainMessageQueue.id.in_(row_ids)).delete(
+            synchronize_session=False
+        )
         db.commit()
 
     for r in results:
         logger.info(
             "Batch anchored — tx=%s root=%s batch_index=%d leaf_count=%d",
-            r["tx_hash"], r["root"], r["batch_index"], r["leaf_count"],
+            r["tx_hash"],
+            r["root"],
+            r["batch_index"],
+            r["leaf_count"],
         )
 
     return len(row_ids)
