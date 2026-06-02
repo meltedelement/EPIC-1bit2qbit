@@ -2,15 +2,15 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
+
 from backend.database.db import get_db
 from backend.rate_limit import RateLimiter, client_ip
 from backend.routes.auth import router as auth_router
 from backend.routes.ws import router as ws_router
 from backend.session import SessionRegistry
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
-
 _AUTH_CFG = "backend.routes.auth.config"
 _WS_CFG = "backend.routes.ws.config"
 
@@ -120,7 +120,7 @@ class TestRegisterRateLimit:
             with patch("backend.routes.auth.hash_password", return_value="hashed"):
                 for i in range(self._LIMIT):
                     r = client.post("/register", json={"username": f"user{i}", "password": "pass"})
-                    assert r.status_code != 429
+                    assert r.status_code == 201
 
     def test_blocks_on_exceeding_limit(self):
         _, client = self._make_app()
