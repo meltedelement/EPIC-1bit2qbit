@@ -76,7 +76,7 @@ def _submit_batch(messages: list[str]) -> dict:
     if len(key_hex) != 64 or not all(c in "0123456789abcdefABCDEF" for c in key_hex):
         raise ValueError(
             "PRIVATE_KEY in .env is not a valid 64-character hex private key "
-            f"(got {len(key_hex)}-char value starting with {key_hex[:6]!r}) — "
+            f"(got {len(key_hex)} characters after optional '0x' prefix) — "
             "replace the placeholder with your actual wallet private key"
         )
 
