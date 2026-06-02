@@ -379,16 +379,24 @@ void App::run() {
         if (e.is_character()) {
             char c = e.character().empty() ? '\0' : e.character()[0];
             if (c == 'e' || c == 'E') {
-                if (is_sent) {
-                    compose_text_   = sel.body;
-                    editing_msg_    = true;
-                    editing_msg_id_ = sel.id;
+                if (is_sent && is_editable(sel.timestamp_ms, now_ms())) {
+                    compose_text_     = sel.body;
+                    editing_msg_      = true;
+                    editing_msg_id_   = sel.id;
                     msg_options_open_ = false;
+                } else if (is_sent) {
+                    push_status("Edit window has closed for this message.");
                 }
                 return true;
             }
             if (c == 'd' || c == 'D') {
-                if (is_sent && cbs_.on_delete) cbs_.on_delete(sel.id, false);
+                if (is_sent) {
+                    if (is_editable(sel.timestamp_ms, now_ms())) {
+                        if (cbs_.on_delete) cbs_.on_delete(sel.id, false);
+                    } else {
+                        push_status("Delete window has closed for this message.");
+                    }
+                }
                 msg_options_open_ = false;
                 return true;
             }
@@ -400,14 +408,17 @@ void App::run() {
                 return true;
             }
             if (c == 'v' || c == 'V') {
-                std::string ct;
-                try {
-                    const auto env = nlohmann::json::parse(sel.wire_ciphertext);
-                    ct = env.at("dr").at("ciphertext").get<std::string>();
-                } catch (...) {}
-                if (!ct.empty()) {
+                if (sel.mid.empty()) {
+                    push_status("Cannot verify: message ID unavailable (message predates this feature).");
+                    msg_options_open_ = false;
+                    return true;
+                }
+                if (!sel.wire_ciphertext.empty()) {
+                    // Payload matches the on-chain format: "{mid}:{full_envelope_JSON}"
+                    // (mirrors daemons/batcher.py: f"{r.mid}:{r.ciphertext}")
+                    const std::string payload = sel.mid + ":" + sel.wire_ciphertext;
                     std::string encoded;
-                    for (unsigned char uc : ct) {
+                    for (unsigned char uc : payload) {
                         if (std::isalnum(uc) || uc=='-'||uc=='_'||uc=='.'||uc=='~')
                             encoded += static_cast<char>(uc);
                         else {
@@ -423,7 +434,7 @@ void App::run() {
                     std::system(("xdg-open '" + url + "' &").c_str());
 #endif
                 } else {
-                    push_status("No ciphertext stored for this message.");
+                    push_status("Cannot verify: no envelope stored for this message.");
                 }
                 msg_options_open_ = false;
                 return true;
@@ -473,7 +484,11 @@ void App::run() {
                 bool is_sent = (msgs[selected_msg_].recipient != local_username_);
                 if (msg_options_open_) {
                     std::string hint = " Options:";
-                    if (is_sent) hint += "  [E]dit  [D]elete";
+                    if (is_sent) {
+                        bool in_window = is_editable(msgs[selected_msg_].timestamp_ms, now_ms());
+                        hint += in_window ? "  [E]dit" : "  [E]dit(expired)";
+                        hint += in_window ? "  [D]elete" : "  [D]elete(expired)";
+                    }
                     hint += "  [F]orward  [V]erify  [Esc]=close";
                     action_bar = text(hint) | color(Color::Yellow);
                 } else {

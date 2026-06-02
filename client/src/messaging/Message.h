@@ -3,7 +3,7 @@
 #include <optional>
 #include <string>
 
-constexpr int64_t EDIT_WINDOW_MS = 15LL * 60 * 1000;
+constexpr int64_t EDIT_WINDOW_MS = 10LL * 60 * 1000;  // matches server edit_window_minutes = 10
 
 // Matches subprocess_handler _serialize_ratchet_message
 struct RatchetHeader {
@@ -68,6 +68,7 @@ struct Message {
     bool                    edited{false};
     std::optional<uint64_t> target_id;
     std::string             wire_ciphertext; // raw network envelope JSON (for verify)
+    std::string             mid;             // blockchain message ID (sender:recipient:ts)
 };
 
 inline bool is_editable(int64_t message_timestamp_ms, int64_t now_ms) {

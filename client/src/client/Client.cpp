@@ -516,6 +516,7 @@ void Client::on_deliver_message(const nlohmann::json& frame) {
             std::chrono::system_clock::now().time_since_epoch()).count();
         msg.body             = body;
         msg.wire_ciphertext  = wire_ciphertext;
+        msg.mid              = frame.value("mid", std::string{});
         Message store_msg    = msg;
         store_msg.body       = storage_encrypt(body);
         msg.id               = store_->save_message(store_msg);
@@ -569,14 +570,16 @@ void Client::encrypt_and_send(Conversation& conv, const std::string& plaintext) 
     nlohmann::json env;
     env["dr"]   = enc.at("encrypted_message");
     env["x3dh"] = nullptr;
-    const std::string wire_ct = env.dump();
-    send_chat_frame(conv.peer(), enc.at("encrypted_message"), nullptr);
+    const std::string wire_ct  = env.dump();
+    const std::string msg_mid  = new_mid(conv.peer());
+    send_chat_frame(conv.peer(), enc.at("encrypted_message"), nullptr, msg_mid);
     Message sent_msg;
     sent_msg.peer            = conv.peer();
     sent_msg.recipient       = conv.peer();
     sent_msg.timestamp_ms    = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     sent_msg.wire_ciphertext = wire_ct;
+    sent_msg.mid             = msg_mid;
     sent_msg.body            = storage_encrypt(plaintext);
     sent_msg.id              = store_->save_message(sent_msg);
     sent_msg.body            = plaintext;  // restore plaintext for in-memory/UI use
@@ -627,14 +630,16 @@ void Client::start_session_and_send(const std::string& peer, const nlohmann::jso
     nlohmann::json env_init;
     env_init["dr"]   = enc.at("encrypted_message");
     env_init["x3dh"] = header;
-    const std::string wire_ct_init = env_init.dump();
-    send_chat_frame(peer, enc.at("encrypted_message"), &header);
+    const std::string wire_ct_init  = env_init.dump();
+    const std::string msg_mid_init  = new_mid(peer);
+    send_chat_frame(peer, enc.at("encrypted_message"), &header, msg_mid_init);
     Message sent_msg;
     sent_msg.peer            = peer;
     sent_msg.recipient       = peer;
     sent_msg.timestamp_ms    = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     sent_msg.wire_ciphertext = wire_ct_init;
+    sent_msg.mid             = msg_mid_init;
     sent_msg.body            = storage_encrypt(plaintext);
     sent_msg.id              = store_->save_message(sent_msg);
     sent_msg.body            = plaintext;  // restore plaintext for in-memory/UI use
@@ -643,7 +648,7 @@ void Client::start_session_and_send(const std::string& peer, const nlohmann::jso
 }
 
 void Client::send_chat_frame(const std::string& recipient, const nlohmann::json& dr_message,
-                             const nlohmann::json* x3dh_header) {
+                             const nlohmann::json* x3dh_header, const std::string& mid) {
     nlohmann::json env;
     env["dr"]   = dr_message;
     env["x3dh"] = x3dh_header ? *x3dh_header : nlohmann::json(nullptr);
@@ -652,7 +657,7 @@ void Client::send_chat_frame(const std::string& recipient, const nlohmann::json&
         {"type", "send_message"},
         {"recipient", recipient},
         {"ciphertext", env.dump()},
-        {"mid", new_mid(recipient)},
+        {"mid", mid},
     };
     connection_->send_text(frame.dump());
 }
