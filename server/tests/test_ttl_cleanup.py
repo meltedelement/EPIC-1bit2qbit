@@ -2,8 +2,9 @@ import asyncio
 from contextlib import suppress
 from unittest.mock import MagicMock, patch
 
+import pytest
 from backend.daemons.ttl_cleanup import _run_cleanup, loop
-from ws_helpers import _session_cm
+from ws_helpers import _CancelAfter, _session_cm
 
 _TTL_SL = "backend.daemons.ttl_cleanup.SessionLocal"
 _TTL_SLEEP = "backend.daemons.ttl_cleanup.asyncio.sleep"
@@ -58,19 +59,13 @@ class TestRunCleanup:
 class TestCleanupLoop:
     def test_db_failure_is_caught_and_loop_retries(self):
         """A DB error must not kill the loop — next cycle should still run."""
-        sleep_calls = 0
-
-        async def fake_sleep(_):
-            nonlocal sleep_calls
-            sleep_calls += 1
-            if sleep_calls >= 2:
-                raise asyncio.CancelledError
+        fake_sleep = _CancelAfter(2)
 
         with patch("backend.daemons.ttl_cleanup._run_cleanup", side_effect=[Exception("db down"), 0]):
             with patch(_TTL_SLEEP, side_effect=fake_sleep):
                 _run_loop(loop())
 
-        assert sleep_calls == 2
+        assert fake_sleep.calls == 2
 
     def test_sleep_called_after_successful_run(self):
         async def fake_sleep(_):
@@ -95,11 +90,7 @@ class TestCleanupLoop:
 
     def test_cancellation_exits_loop_cleanly(self):
         """CancelledError from sleep must propagate out (not be swallowed)."""
-        async def fake_sleep(_):
-            raise asyncio.CancelledError
-
         with patch("backend.daemons.ttl_cleanup._run_cleanup", return_value=0):
-            with patch(_TTL_SLEEP, side_effect=fake_sleep):
-                import pytest
+            with patch(_TTL_SLEEP, side_effect=_CancelAfter(1)):
                 with pytest.raises(asyncio.CancelledError):
                     asyncio.run(loop())

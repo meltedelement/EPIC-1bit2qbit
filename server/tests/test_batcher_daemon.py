@@ -2,8 +2,9 @@ import asyncio
 from contextlib import suppress
 from unittest.mock import MagicMock, patch
 
+import pytest
 from backend.daemons.batcher import _run_batch, loop
-from ws_helpers import _session_cm
+from ws_helpers import _CancelAfter, _session_cm
 
 _BATCHER_SL = "backend.daemons.batcher.SessionLocal"
 _ADD_TO_BC = "backend.daemons.batcher.add_to_blockchain"
@@ -12,9 +13,9 @@ _BATCHER_SLEEP = "backend.daemons.batcher.asyncio.sleep"
 _BATCH_RESULT = [{"tx_hash": "0xabc", "root": "0xdef", "batch_index": 0, "leaf_count": 1}]
 
 
-def _mock_row(id=1, mid="alice:bob:1000", ciphertext="ct"):
+def _mock_row(row_id=1, mid="alice:bob:1000", ciphertext="ct"):
     row = MagicMock()
-    row.id = id
+    row.id = row_id
     row.mid = mid
     row.ciphertext = ciphertext
     return row
@@ -101,19 +102,13 @@ class TestRunBatch:
 class TestBatcherLoop:
     def test_blockchain_failure_is_caught_and_loop_retries(self):
         """A blockchain error must not kill the loop — next cycle should still run."""
-        sleep_calls = 0
-
-        async def fake_sleep(_):
-            nonlocal sleep_calls
-            sleep_calls += 1
-            if sleep_calls >= 2:
-                raise asyncio.CancelledError
+        fake_sleep = _CancelAfter(2)
 
         with patch("backend.daemons.batcher._run_batch", side_effect=[Exception("revert"), 0]):
             with patch(_BATCHER_SLEEP, side_effect=fake_sleep):
                 _run_loop(loop())
 
-        assert sleep_calls == 2
+        assert fake_sleep.calls == 2
 
     def test_sleep_called_after_successful_run(self):
         async def fake_sleep(_):
@@ -137,12 +132,7 @@ class TestBatcherLoop:
         mock_sleep.assert_called_once()
 
     def test_cancellation_exits_loop_cleanly(self):
-        import pytest
-
-        async def fake_sleep(_):
-            raise asyncio.CancelledError
-
         with patch("backend.daemons.batcher._run_batch", return_value=0):
-            with patch(_BATCHER_SLEEP, side_effect=fake_sleep):
+            with patch(_BATCHER_SLEEP, side_effect=_CancelAfter(1)):
                 with pytest.raises(asyncio.CancelledError):
                     asyncio.run(loop())
