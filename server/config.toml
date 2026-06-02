@@ -20,6 +20,12 @@ ttl_cleanup_interval_hours = 1
 [blockchain]
 batch_interval_minutes = 30
 
+[rate_limiting]
+register_limit               = 5
+register_window_seconds      = 60
+ws_auth_fail_limit           = 10
+ws_auth_fail_window_seconds  = 900
+
 [logging.stdout]
 enabled     = true
 level       = "DEBUG"

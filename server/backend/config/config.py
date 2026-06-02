@@ -60,12 +60,20 @@ class BlockchainConfig(BaseModel):
     batch_interval_minutes: int
 
 
+class RateLimitConfig(BaseModel):
+    register_limit: int
+    register_window_seconds: int
+    ws_auth_fail_limit: int
+    ws_auth_fail_window_seconds: int
+
+
 class Config(BaseModel):
     network: NetworkConfig
     services: ServicesConfig
     logging: LoggingConfig
     messaging: MessagingConfig
     blockchain: BlockchainConfig
+    rate_limiting: RateLimitConfig
 
 
 def _load() -> Config:
