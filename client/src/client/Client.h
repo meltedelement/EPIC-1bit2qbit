@@ -63,6 +63,13 @@ private:
                                    const nlohmann::json* x3dh_header);
     std::string new_mid(const std::string& recipient) const;
 
+    // Encrypt/decrypt a string for local DB storage using the DEK.
+    // Must be called with mutex_ held (uses crypto_).
+    // decrypt_from_storage gracefully returns the input unchanged if it is not
+    // an encrypted blob, so existing plaintext rows survive a DB migration.
+    std::string storage_encrypt(const std::string& plaintext);
+    std::string storage_decrypt(const std::string& data);
+
     std::string                    host_;
     uint16_t                       port_;
     std::string                    current_user_;

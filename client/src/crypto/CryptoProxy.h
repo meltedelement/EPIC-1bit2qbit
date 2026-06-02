@@ -94,6 +94,12 @@ public:
                                    const nlohmann::json& encrypted_message,
                                    const std::string& associated_data);
 
+    // ── Storage encryption (DEK-backed AES-256-GCM) ────────────────────────────
+    // Encrypt/decrypt arbitrary plaintext for local SQLite storage.
+    // plaintext_b64: base64-encoded raw bytes. Returns {nonce, ciphertext} or {plaintext}.
+    nlohmann::json encrypt_for_storage(const std::string& plaintext_b64);
+    nlohmann::json decrypt_from_storage(const nlohmann::json& encrypted);
+
 private:
     std::string send_recv(const std::string& line);  // write request line, read reply line
     std::string read_line();                          // buffered readline from the subprocess
