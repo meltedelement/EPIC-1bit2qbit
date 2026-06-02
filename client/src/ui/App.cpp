@@ -2,8 +2,10 @@
 #include "log.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <ctime>
+#include <thread>
 #include <utility>
 
 #include <ftxui/component/component.hpp>
@@ -316,6 +318,18 @@ void App::run() {
     // ── Root ──────────────────────────────────────────────────────────────────
     auto root = Container::Tab(Components{login_renderer, chat_renderer}, &active_screen_);
     screen_ptr_ = &screen;
+
+    std::atomic<bool> running{true};
+    std::thread refresh_thread([&] {
+        while (running.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            if (running.load())
+                screen.Post([] {});
+        }
+    });
+
     screen.Loop(root);
     screen_ptr_ = nullptr;
+    running = false;
+    refresh_thread.join();
 }

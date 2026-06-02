@@ -35,3 +35,32 @@ inline void epic_log(const std::string& msg) {
     std::fprintf(f, "[%s.%03lld] %s\n", ts, static_cast<long long>(ms), msg.c_str());
     std::fflush(f);
 }
+
+// Opens a separate terminal window tailing the log file. No-op on Windows.
+// Tries common terminal emulators in order; silently does nothing if none found.
+inline void open_log_terminal() {
+#ifndef _WIN32
+    // Ensure the log file exists before tail opens it.
+    if (FILE* f = std::fopen("/tmp/epic-client.log", "a")) std::fclose(f);
+
+    struct { const char* bin; const char* args; } terms[] = {
+        {"xterm",          "-title 'EPIC Logs' -e 'tail -f /tmp/epic-client.log'"},
+        {"gnome-terminal", "--title 'EPIC Logs' -- bash -c 'tail -f /tmp/epic-client.log'"},
+        {"alacritty",      "--title 'EPIC Logs' -e bash -c 'tail -f /tmp/epic-client.log'"},
+        {"kitty",          "--title 'EPIC Logs' bash -c 'tail -f /tmp/epic-client.log'"},
+        {"konsole",        "-e bash -c 'tail -f /tmp/epic-client.log'"},
+        {"xfce4-terminal", "-e 'tail -f /tmp/epic-client.log'"},
+    };
+
+    for (const auto& t : terms) {
+        char check[64];
+        std::snprintf(check, sizeof(check), "which %s >/dev/null 2>&1", t.bin);
+        if (std::system(check) == 0) {
+            char cmd[256];
+            std::snprintf(cmd, sizeof(cmd), "%s %s &", t.bin, t.args);
+            std::system(cmd);
+            return;
+        }
+    }
+#endif
+}

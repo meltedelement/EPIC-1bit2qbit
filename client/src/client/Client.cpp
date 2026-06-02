@@ -168,6 +168,10 @@ void Client::run() {
 
     app_->run();  // blocking TUI loop; returns when the user quits
 
+    quit_ = true;
+    reconnect_cv_.notify_all();
+    if (reconnect_thread_.joinable()) reconnect_thread_.join();
+
     if (connection_) connection_->disconnect();
     crypto_->stop();
 }
@@ -244,14 +248,28 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
                 app_->set_conversations(std::move(convs));
         }
 
-        current_user_ = username;
+        current_user_  = username;
+        auth_password_ = auth_password;
+        reconnect_attempt_ = 0;
 
         // Bring up the network. Callbacks must be set BEFORE connect(): the read
         // thread starts inside connect() and may fire on_message immediately.
         connection_ = std::make_unique<Connection>(host_, port_, port_ == 443);
         connection_->on_message([this](std::string frame) { handle_ws_frame(frame); });
-        connection_->on_disconnect(
-            [this](std::string reason) { app_->push_status("Disconnected: " + reason); });
+        connection_->on_disconnect([this](std::string reason) {
+            epic_log("on_disconnect: " + reason);
+            app_->push_status("Disconnected: " + reason);
+            if (quit_.load() || current_user_.empty()) return;
+            bool expected = false;
+            if (reconnect_active_.compare_exchange_strong(expected, true)) {
+                reconnect_attempt_ = 0;
+                if (reconnect_thread_.joinable()) reconnect_thread_.join();
+                reconnect_thread_ = std::thread([this] {
+                    reconnect_loop();
+                    reconnect_active_ = false;
+                });
+            }
+        });
 
         connection_->connect(server_cert_pin_);
         if (server_cert_pin_.empty()) server_cert_pin_ = connection_->cert_fingerprint();
@@ -299,6 +317,40 @@ void Client::do_send(const std::string& recipient, const std::string& plaintext)
 
 void Client::do_delete(uint64_t /*message_id*/, bool /*for_both_parties*/) {}
 void Client::do_edit(uint64_t /*message_id*/, const std::string& /*new_plaintext*/) {}
+
+// ── Reconnect ────────────────────────────────────────────────────────────────────
+
+void Client::reconnect_loop() {
+    while (!quit_.load()) {
+        int attempt  = reconnect_attempt_.load();
+        int delay_s  = std::min(1 << std::min(attempt, 5), 30);  // 1,2,4,8,16,30
+
+        epic_log("reconnect_loop: attempt=" + std::to_string(attempt)
+                 + " delay=" + std::to_string(delay_s) + "s");
+        app_->push_status("Reconnecting in " + std::to_string(delay_s) + "s "
+                          "(attempt " + std::to_string(attempt + 1) + ")...");
+
+        {
+            std::unique_lock<std::mutex> lk(reconnect_cv_mutex_);
+            reconnect_cv_.wait_for(lk, std::chrono::seconds(delay_s),
+                                   [this] { return quit_.load(); });
+        }
+        if (quit_.load()) break;
+
+        try {
+            app_->push_status("Reconnecting...");
+            connection_->connect(server_cert_pin_);
+            send_login_frame(current_user_, auth_password_);
+            publish_key_bundle();
+            reconnect_attempt_ = 0;
+            app_->push_status("Reconnected as '" + current_user_ + "'.");
+            return;
+        } catch (const std::exception& e) {
+            epic_log("reconnect_loop: failed: " + std::string(e.what()));
+            reconnect_attempt_.fetch_add(1);
+        }
+    }
+}
 
 // ── Network helpers ──────────────────────────────────────────────────────────────
 
