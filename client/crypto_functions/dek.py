@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 # and 6 GiB of RAM."  t=1 is sufficient because a single pass over 6 GiB of
 # memory already meets the 3-second target; increasing t further would exceed it.
 _ARGON2_TIME_COST = 1
-_ARGON2_MEMORY_COST = 6_291_456  # 6 GiB in KiB (6 * 1024 * 1024)
+_ARGON2_MEMORY_COST = 65_536  # 64 MiB in KiB
 _ARGON2_PARALLELISM = 4
 _ARGON2_HASH_LEN = 32
 _ARGON2_SALT_LEN = 32

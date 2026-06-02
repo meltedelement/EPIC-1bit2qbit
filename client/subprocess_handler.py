@@ -45,6 +45,10 @@ _active_dek: bytes | None = None  # pylint: disable=invalid-name
 _STATE_AAD = b"X3DH_STATE"
 _NONCE_LEN = 12
 
+# Single reusable event loop — avoids the per-call ProactorEventLoop
+# create/destroy overhead on Windows (IOCP setup is expensive).
+_loop = asyncio.new_event_loop()
+
 
 def _require_dek() -> bytes:
     if _active_dek is None:
@@ -217,7 +221,7 @@ def _handle_get_num_pre_keys(p: dict) -> dict:
 def _handle_get_shared_secret_active(p: dict) -> dict:
     dek = _require_dek()
     state = _unwrap_state(p["encrypted_state"], dek)
-    shared_secret, ad, header = asyncio.run(
+    shared_secret, ad, header = _loop.run_until_complete(
         state.get_shared_secret_active(_deserialize_bundle(p["bob_bundle"]))
     )
     return {
@@ -232,7 +236,7 @@ def _handle_get_shared_secret_active(p: dict) -> dict:
 def _handle_get_shared_secret_passive(p: dict) -> dict:
     dek = _require_dek()
     state = _unwrap_state(p["encrypted_state"], dek)
-    shared_secret, ad, spk_pair = asyncio.run(
+    shared_secret, ad, spk_pair = _loop.run_until_complete(
         state.get_shared_secret_passive(_deserialize_x3dh_header(p["header"]))
     )
     return {
@@ -261,7 +265,7 @@ def _handle_encrypt_initial_message(p: dict) -> dict:
             **dr_configuration,
         )
 
-    dr, msg = asyncio.run(run())
+    dr, msg = _loop.run_until_complete(run())
     return {"encrypted_message": _serialize_ratchet_message(msg), "ratchet_state": dr.json}
 
 
@@ -277,7 +281,7 @@ def _handle_decrypt_initial_message(p: dict) -> dict:
             **dr_configuration,
         )
 
-    dr, plaintext = asyncio.run(run())
+    dr, plaintext = _loop.run_until_complete(run())
     return {"plaintext": _b64(plaintext), "ratchet_state": dr.json}
 
 
@@ -287,7 +291,7 @@ def _handle_encrypt_message(p: dict) -> dict:
     async def run():
         return await dr.encrypt_message(_unb64(p["message"]), _unb64(p["associated_data"]))
 
-    msg = asyncio.run(run())
+    msg = _loop.run_until_complete(run())
     return {"encrypted_message": _serialize_ratchet_message(msg), "ratchet_state": dr.json}
 
 
@@ -298,7 +302,7 @@ def _handle_decrypt_message(p: dict) -> dict:
     async def run():
         return await dr.decrypt_message(msg, _unb64(p["associated_data"]))
 
-    plaintext = asyncio.run(run())
+    plaintext = _loop.run_until_complete(run())
     return {"plaintext": _b64(plaintext), "ratchet_state": dr.json}
 
 
