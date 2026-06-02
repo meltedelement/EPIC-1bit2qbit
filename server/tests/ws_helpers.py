@@ -1,11 +1,10 @@
 import asyncio
 from unittest.mock import MagicMock
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 from backend.rate_limit import RateLimiter
 from backend.session import SessionRegistry
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 def make_ws_app(router) -> tuple[FastAPI, TestClient]:
