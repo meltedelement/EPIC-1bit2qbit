@@ -10,6 +10,7 @@
 
 #include "messaging/Conversation.h"
 
+
 class Connection;
 class CryptoProxy;
 class MessageStore;
@@ -82,6 +83,7 @@ private:
     std::mutex                          mutex_;
     std::map<std::string, Conversation> conversations_;        // peer → live session
     std::map<std::string, std::vector<std::string>> pending_sends_;  // peer → plaintext awaiting bundle
+
 
     std::unique_ptr<Connection>    connection_;
     std::unique_ptr<CryptoProxy>   crypto_;

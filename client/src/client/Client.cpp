@@ -63,6 +63,7 @@ std::string message_to_body(const std::string& plaintext_b64) {
 
 }  // namespace
 
+
 Client::Client(const std::string& host, uint16_t port)
     : host_{host}, port_{port} {}
 

@@ -2,7 +2,15 @@ import random
 from unittest.mock import patch
 
 import pytest
-from batcher import MAX_LEAVES, _build_tree, _get_root, _hash_pair, _make_leaf, add_to_blockchain
+from batcher import (
+    MAX_LEAVES,
+    _build_tree,
+    _get_root,
+    _hash_pair,
+    _make_leaf,
+    _submit_batch,
+    add_to_blockchain,
+)
 from web3 import Web3
 
 
@@ -90,6 +98,41 @@ class TestGetRoot:
         leaves = [_make_leaf(m) for m in ["a", "b", "c", "d"]]
         tree = _build_tree(leaves)
         assert _get_root(tree) == tree[-1][0]
+
+
+_VALID_KEY = "a" * 64
+_VALID_ADDRESS = "0x" + "b" * 40
+_VALID_RPC = "https://eth-sepolia.example.com"
+
+
+class TestSubmitBatchEnvValidation:
+    def test_placeholder_private_key_raises(self, monkeypatch):
+        monkeypatch.setenv("SEPOLIA_RPC_URL", _VALID_RPC)
+        monkeypatch.setenv("CONTRACT_ADDRESS", _VALID_ADDRESS)
+        monkeypatch.setenv("PRIVATE_KEY", "your_private_key_here")
+        with pytest.raises(ValueError, match="PRIVATE_KEY.*not a valid 64-character hex"):
+            _submit_batch(["msg"])
+
+    def test_short_hex_private_key_raises(self, monkeypatch):
+        monkeypatch.setenv("SEPOLIA_RPC_URL", _VALID_RPC)
+        monkeypatch.setenv("CONTRACT_ADDRESS", _VALID_ADDRESS)
+        monkeypatch.setenv("PRIVATE_KEY", "fakekey")
+        with pytest.raises(ValueError, match="PRIVATE_KEY.*not a valid 64-character hex"):
+            _submit_batch(["msg"])
+
+    def test_placeholder_contract_address_raises(self, monkeypatch):
+        monkeypatch.setenv("SEPOLIA_RPC_URL", _VALID_RPC)
+        monkeypatch.setenv("CONTRACT_ADDRESS", "your_contract_address_here")
+        monkeypatch.setenv("PRIVATE_KEY", _VALID_KEY)
+        with pytest.raises(ValueError, match="CONTRACT_ADDRESS.*not a valid Ethereum address"):
+            _submit_batch(["msg"])
+
+    def test_malformed_contract_address_raises(self, monkeypatch):
+        monkeypatch.setenv("SEPOLIA_RPC_URL", _VALID_RPC)
+        monkeypatch.setenv("CONTRACT_ADDRESS", "0xFAKE")
+        monkeypatch.setenv("PRIVATE_KEY", _VALID_KEY)
+        with pytest.raises(ValueError, match="CONTRACT_ADDRESS.*not a valid Ethereum address"):
+            _submit_batch(["msg"])
 
 
 class TestAddToBlockchain:

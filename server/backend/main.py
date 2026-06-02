@@ -1,11 +1,13 @@
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import AsyncIterator
 
 import uvicorn
 from fastapi import FastAPI
 
 from .config.config import config
+from .daemons import batcher, ttl_cleanup
 from .database.db import Base, engine
 from .logger import setup_logging
 from .routes import auth, ws
@@ -17,20 +19,31 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    await asyncio.to_thread(Base.metadata.create_all, engine)
+    logger.info("Database schema verified")
+
     application.state.sessions = SessionRegistry()
     logger.info("Session registry initialized")
+
+    batcher_task = asyncio.create_task(batcher.loop(), name="batcher")
+    ttl_task = asyncio.create_task(ttl_cleanup.loop(), name="ttl-cleanup")
+
     yield
+
+    batcher_task.cancel()
+    ttl_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await batcher_task
+    logger.info("Batcher daemon stopped")
+    with suppress(asyncio.CancelledError):
+        await ttl_task
+    logger.info("TTL cleanup daemon stopped")
     logger.info("Server shutting down")
 
 
 app = FastAPI(title="1bit2qbit", version="0.1.0", lifespan=lifespan)
 app.include_router(auth.router)
 app.include_router(ws.router)
-
-
-def init_db() -> None:
-    Base.metadata.create_all(bind=engine)
-    print("Database schema created.")
 
 
 def main() -> None:
@@ -40,7 +53,3 @@ def main() -> None:
         port=config.services.backend.internal_port,
         root_path="/backend",
     )
-
-
-if __name__ == "__main__":
-    main()
