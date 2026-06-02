@@ -22,6 +22,7 @@ server/web-app/build/
 
 # client
 client/build/
+client/*.db
 
 # Python
 __pycache__/
