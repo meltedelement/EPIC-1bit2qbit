@@ -6,7 +6,6 @@ from argon2 import PasswordHasher
 from backend.auth.credentials import verify_credentials
 from backend.crypto.password import hash_password
 from backend.routes.ws import router
-from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 from ws_helpers import _empty_drain, make_ws_app
 

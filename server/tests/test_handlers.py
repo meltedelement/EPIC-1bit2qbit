@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from backend.database.models import BlockchainMessageQueue, KeyBundle, OneTimePreKey, User
 from backend.routes.ws import router
-from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 from ws_helpers import _session_cm, make_ws_app
 
