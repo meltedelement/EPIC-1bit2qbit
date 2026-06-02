@@ -28,6 +28,11 @@ class RateLimiter:
         self._lock = threading.Lock()
         self._windows: dict[str, deque[float]] = {}
 
+    def __len__(self) -> int:
+        """Number of IPs currently tracked (i.e. with at least one unexpired hit)."""
+        with self._lock:
+            return len(self._windows)
+
     def _prune(self, key: str, cutoff: float) -> deque[float] | None:
         """Remove expired timestamps and delete the entry if it becomes empty.
         Returns the deque if it still has entries, else None."""

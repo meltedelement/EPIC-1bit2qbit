@@ -76,7 +76,7 @@ class TestRateLimiterHit:
             rl.hit("ip", 5, 60)
         with patch("backend.rate_limit.time.monotonic", return_value=t + 61.0):
             rl.is_blocked("ip", 5, 60)  # prunes without recording — key should be deleted
-        assert "ip" not in rl._windows
+        assert len(rl) == 0
 
 
 class TestRateLimiterIsBlocked:
@@ -104,7 +104,7 @@ class TestRegisterRateLimit:
     def _make_app(self) -> tuple[FastAPI, TestClient]:
         app = FastAPI()
         app.state.rate_limiter = RateLimiter()
-        app.dependency_overrides[get_db] = lambda: MagicMock()
+        app.dependency_overrides[get_db] = MagicMock
         app.include_router(auth_router)
         return app, TestClient(app)
 
