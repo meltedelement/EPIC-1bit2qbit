@@ -151,7 +151,6 @@ void Client::run() {
     epic_log("Client::run start");
     // Build the crypto subprocess bridge, local store, and the UI.
     crypto_ = std::make_unique<CryptoProxy>();
-    store_  = std::make_unique<MessageStore>("epic-client.db");
 
     AppCallbacks cbs;
     cbs.on_register = [this](std::string u, std::string p, std::string pin) { do_register(u, p, pin); };
@@ -183,6 +182,7 @@ void Client::do_register(const std::string& username, const std::string& auth_pa
     }
     try {
         std::lock_guard<std::mutex> lk(mutex_);
+        store_ = std::make_unique<MessageStore>(username + ".db");
 
         encrypted_dek_   = crypto_->create_dek(key_pin, username).at("encrypted_dek");
         encrypted_state_ = crypto_->create_state().at("encrypted_state");
@@ -207,6 +207,8 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
                       const std::string& key_pin) {
     epic_log("do_login: user=" + username);
     try {
+        store_ = std::make_unique<MessageStore>(username + ".db");
+
         // Load the persisted DEK blob if we don't have it in memory already.
         if (encrypted_dek_.is_null()) {
             auto stored = store_->load_dek(username);
@@ -414,9 +416,11 @@ void Client::on_deliver_message(const nlohmann::json& frame) {
         const std::string body = message_to_body(plaintext_b64);
         epic_log("on_deliver_message: decrypted body=" + body);
         Message msg;
-        msg.peer      = sender;
-        msg.recipient = current_user_;
-        msg.body      = body;
+        msg.peer         = sender;
+        msg.recipient    = current_user_;
+        msg.timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        msg.body         = body;
         conv.add_message(msg);
         store_->save_message(msg);
         epic_log("on_deliver_message: calling push_message");
@@ -466,6 +470,13 @@ void Client::encrypt_and_send(Conversation& conv, const std::string& plaintext) 
     conv.set_ratchet_state(enc.at("ratchet_state").dump());
     store_->save_ratchet_state(conv.peer(), conv.ratchet_state());
     send_chat_frame(conv.peer(), enc.at("encrypted_message"), nullptr);
+    Message sent_msg;
+    sent_msg.peer         = conv.peer();
+    sent_msg.recipient    = conv.peer();
+    sent_msg.timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    sent_msg.body         = plaintext;
+    store_->save_message(sent_msg);
     epic_log("encrypt_and_send: frame sent, pushing to UI");
     app_->push_sent_message(conv.peer(), plaintext);
 }
@@ -510,6 +521,13 @@ void Client::start_session_and_send(const std::string& peer, const nlohmann::jso
 
     const nlohmann::json header = ss.at("header");
     send_chat_frame(peer, enc.at("encrypted_message"), &header);
+    Message sent_msg;
+    sent_msg.peer         = peer;
+    sent_msg.recipient    = peer;
+    sent_msg.timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    sent_msg.body         = plaintext;
+    store_->save_message(sent_msg);
     app_->push_sent_message(peer, plaintext);
 }
 

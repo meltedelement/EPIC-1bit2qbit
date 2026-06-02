@@ -72,7 +72,10 @@ void MessageStore::save_message(const Message& msg) {
         INSERT OR REPLACE INTO messages (id, peer, recipient, timestamp_ms, type, body, target_id)
         VALUES (?, ?, ?, ?, ?, ?, ?)
     )");
-    sqlite3_bind_int64(stmt.s, 1, static_cast<sqlite3_int64>(msg.id));
+    if (msg.id == 0)
+        sqlite3_bind_null(stmt.s, 1);
+    else
+        sqlite3_bind_int64(stmt.s, 1, static_cast<sqlite3_int64>(msg.id));
     sqlite3_bind_text (stmt.s, 2, msg.peer.c_str(),      -1, SQLITE_TRANSIENT);
     sqlite3_bind_text (stmt.s, 3, msg.recipient.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt.s, 4, msg.timestamp_ms);
