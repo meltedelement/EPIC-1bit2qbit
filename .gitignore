@@ -11,6 +11,8 @@ blockchain/node_modules/
 # Server
 server/node_modules/
 server/.env
+server/.pids/
+server/logs/
 
 # Web app
 server/web-app/node_modules/
