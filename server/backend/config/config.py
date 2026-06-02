@@ -51,6 +51,7 @@ class NetworkConfig(BaseModel):
 
 class MessagingConfig(BaseModel):
     edit_window_minutes: int
+    edit_grace_seconds: int
     message_ttl_days: int
 
 
