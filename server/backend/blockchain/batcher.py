@@ -113,7 +113,7 @@ def _submit_batch(messages: list[str]) -> dict:
     signed = w3.eth.account.sign_transaction(tx, private_key=private_key)
     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
     logger.info("Batch submitted — tx_hash=%s, leaf_count=%d", tx_hash.hex(), len(leaves))
-    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120, poll_latency=6)
 
     if receipt.status != 1:
         logger.error("Transaction reverted on-chain — tx_hash=%s", tx_hash.hex())
