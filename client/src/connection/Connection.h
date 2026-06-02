@@ -16,7 +16,7 @@ using DisconnectCallback = std::function<void(std::string reason)>;
 // → WebSocket upgrade → framed message I/O.
 class Connection {
 public:
-    Connection(const std::string& host, uint16_t port);
+    Connection(const std::string& host, uint16_t port, bool tls = true);
     ~Connection();
 
     Connection(const Connection&)            = delete;
@@ -60,6 +60,7 @@ private:
 
     std::string                       host_;
     uint16_t                          port_;
+    bool                              tls_;
     TlsContext                        tls_ctx_;
     boost::asio::io_context           io_ctx_;
     boost::asio::ip::tcp::socket      tcp_sock_;

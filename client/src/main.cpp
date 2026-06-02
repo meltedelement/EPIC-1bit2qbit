@@ -1,6 +1,6 @@
 #include "client/Client.h"
 
 int main() {
-    Client{"localhost", 443}.run();
+    Client{"1bit2qbit.theburkenator.com", 443}.run();
     return 0;
 }

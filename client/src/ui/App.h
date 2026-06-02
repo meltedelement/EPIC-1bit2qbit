@@ -19,9 +19,12 @@ public:
     void run();
 
     // Show a transient status line (e.g. "Login failed: bad PIN").
-    // Must be called from the FTXUI event-loop thread.
-    // TODO: thread-safe variant via ScreenInteractive::Post() once Connection fires callbacks.
+    // TODO: thread-safe — use ScreenInteractive::Post() once Connection fires callbacks.
     void push_status(std::string msg);
+
+    // Append a received message to the conversation with sender.
+    // TODO: thread-safe — same caveat as push_status.
+    void push_message(const std::string& sender, const std::string& body);
 
     // Switch to the chat screen after a successful login.
     // Called by Client once the DEK is unlocked (and later, the WS session is live).
@@ -40,6 +43,8 @@ private:
     std::string login_pin_;
 
     std::vector<Conversation> conversations_;
+    std::vector<std::string>  conv_names_;    // kept in sync with conversations_
     int                       selected_conv_{0};
     std::string               compose_text_;
+    std::string               new_peer_;
 };

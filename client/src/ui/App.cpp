@@ -1,5 +1,6 @@
 #include "ui/App.h"
 
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <utility>
@@ -31,6 +32,21 @@ int64_t now_ms() {
 App::App(AppCallbacks cbs) : cbs_{std::move(cbs)} {}
 
 void App::push_status(std::string msg) { status_msg_ = std::move(msg); }
+
+void App::push_message(const std::string& sender, const std::string& body) {
+    auto it = std::find_if(conversations_.begin(), conversations_.end(),
+                           [&](const Conversation& c) { return c.peer() == sender; });
+    if (it == conversations_.end()) {
+        conversations_.emplace_back(Conversation{sender});
+        conv_names_.push_back(sender);
+        it = conversations_.end() - 1;
+    }
+    Message m;
+    m.peer      = sender;
+    m.recipient = local_username_;
+    m.body      = body;
+    it->add_message(std::move(m));
+}
 
 void App::advance_to_chat(std::string username) {
     local_username_ = std::move(username);
@@ -131,11 +147,33 @@ void App::run() {
     });
 
     // ── Chat ──────────────────────────────────────────────────────────────────
-    std::vector<std::string> conv_names;
     for (const auto& c : conversations_)
-        conv_names.push_back(c.peer());
+        conv_names_.push_back(c.peer());
 
-    auto conv_menu = Menu(&conv_names, &selected_conv_);
+    auto conv_menu = Menu(&conv_names_, &selected_conv_);
+
+    auto add_conversation = [&] {
+        if (new_peer_.empty()) return;
+        auto it = std::find_if(conversations_.begin(), conversations_.end(),
+                               [&](const Conversation& c) { return c.peer() == new_peer_; });
+        if (it == conversations_.end()) {
+            conversations_.emplace_back(Conversation{new_peer_});
+            conv_names_.push_back(new_peer_);
+            selected_conv_ = static_cast<int>(conversations_.size()) - 1;
+        } else {
+            selected_conv_ = static_cast<int>(std::distance(conversations_.begin(), it));
+        }
+        new_peer_.clear();
+    };
+
+    auto new_peer_input = Input(&new_peer_, "New chat...");
+    new_peer_input = CatchEvent(new_peer_input, [&](Event e) {
+        if (e == Event::Return) { add_conversation(); return true; }
+        return false;
+    });
+    auto new_conv_btn = Button("+", add_conversation, ButtonOption::Ascii());
+    auto left_panel   = Container::Vertical({conv_menu,
+                                             Container::Horizontal({new_peer_input, new_conv_btn})});
 
     auto do_send = [&] {
         if (compose_text_.empty()) return;
@@ -167,7 +205,7 @@ void App::run() {
     auto send_btn = Button("Send", do_send, ButtonOption::Ascii());
 
     auto chat_right  = Container::Horizontal({compose_input, send_btn});
-    auto chat_layout = Container::Horizontal({conv_menu, chat_right});
+    auto chat_layout = Container::Horizontal({left_panel, chat_right});
 
     auto chat_renderer = Renderer(chat_layout, [&]() -> Element {
         Elements msg_els;
@@ -182,7 +220,10 @@ void App::run() {
                     text(m.body) | flex,
                 }));
             }
-            msg_els.back() = msg_els.back() | focus;
+            if (!msg_els.empty())
+                msg_els.back() = msg_els.back() | focus;
+            else
+                msg_els.push_back(text("No messages yet.") | dim | center);
         } else {
             msg_els.push_back(text("No messages yet.") | dim | center);
         }
@@ -204,6 +245,11 @@ void App::run() {
                     text(" Conversations") | bold,
                     separator(),
                     conv_menu->Render() | flex,
+                    separator(),
+                    hbox({
+                        new_peer_input->Render() | flex,
+                        new_conv_btn->Render(),
+                    }),
                 }) | border | size(WIDTH, EQUAL, 22),
                 vbox({
                     text("  " + peer_title) | bold,

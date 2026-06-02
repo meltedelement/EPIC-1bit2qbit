@@ -5,16 +5,92 @@
 #include <stdexcept>
 #include <utility>
 
+#include <openssl/err.h>
+#include <openssl/x509.h>
+
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
 #include "connection/Connection.h"
+#include "connection/TlsContext.h"
 #include "crypto/CryptoProxy.h"
 #include "messaging/Message.h"
 #include "messaging/MessageStore.h"
 #include "ui/App.h"
 
 namespace {
+
+// ── One-shot HTTPS POST ───────────────────────────────────────────────────────
+// Used for registration (a plain HTTP exchange, not a WebSocket session).
+
+struct HttpResponse { int status; std::string body; };
+
+HttpResponse https_post(const std::string& host, uint16_t port,
+                        const std::string& path, const std::string& json_body) {
+    boost::asio::io_context io;
+    boost::asio::ip::tcp::socket sock{io};
+    boost::asio::ip::tcp::resolver resolver{io};
+    boost::asio::connect(sock, resolver.resolve(host, std::to_string(port)));
+
+    TlsContext tls_ctx;
+    SSL* ssl = SSL_new(tls_ctx.ctx());
+    if (!ssl) throw std::runtime_error{"SSL_new failed"};
+    struct SslGuard { SSL* s; ~SslGuard() { SSL_free(s); } } guard{ssl};
+
+    SSL_set_tlsext_host_name(ssl, host.c_str());
+    SSL_set1_host(ssl, host.c_str());
+    SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr);
+    SSL_set_fd(ssl, static_cast<int>(sock.native_handle()));
+
+    if (SSL_connect(ssl) != 1) {
+        std::string msg = "SSL_connect failed";
+        long verify = SSL_get_verify_result(ssl);
+        if (verify != X509_V_OK)
+            msg += std::string{": "} + X509_verify_cert_error_string(verify);
+        unsigned long err;
+        while ((err = ERR_get_error()) != 0)
+            msg += std::string{"; "} + ERR_error_string(err, nullptr);
+        throw std::runtime_error{msg};
+    }
+
+    const std::string request =
+        "POST " + path + " HTTP/1.1\r\n"
+        "Host: " + host + "\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: " + std::to_string(json_body.size()) + "\r\n"
+        "Connection: close\r\n"
+        "\r\n" + json_body;
+
+    size_t total = 0;
+    while (total < request.size()) {
+        int n = SSL_write(ssl, request.data() + total,
+                          static_cast<int>(request.size() - total));
+        if (n <= 0) throw std::runtime_error{"SSL_write failed during registration"};
+        total += static_cast<size_t>(n);
+    }
+
+    std::string response;
+    char buf[4096];
+    while (true) {
+        int n = SSL_read(ssl, buf, static_cast<int>(sizeof(buf)));
+        if (n > 0) { response.append(buf, static_cast<size_t>(n)); continue; }
+        int err = SSL_get_error(ssl, n);
+        if (err == SSL_ERROR_ZERO_RETURN || err == SSL_ERROR_SYSCALL) break;
+        throw std::runtime_error{"SSL_read failed during registration"};
+    }
+
+    // Parse "HTTP/1.1 NNN ..."
+    const size_t sp1 = response.find(' ');
+    const size_t sp2 = sp1 != std::string::npos ? response.find(' ', sp1 + 1) : std::string::npos;
+    if (sp1 == std::string::npos || sp2 == std::string::npos)
+        throw std::runtime_error{"malformed HTTP response from server"};
+    const int status = std::stoi(response.substr(sp1 + 1, sp2 - sp1 - 1));
+
+    const size_t body_start = response.find("\r\n\r\n");
+    std::string body = (body_start != std::string::npos) ? response.substr(body_start + 4) : "";
+
+    return {status, std::move(body)};
+}
 
 // base64 over OpenSSL's EVP codec — the same primitive Connection uses for the
 // WebSocket key. Crypto material crosses the IPC boundary as base64 strings; the
@@ -108,13 +184,17 @@ void Client::do_register(const std::string& username, const std::string& passwor
         const nlohmann::json state = crypto_->create_state();
         encrypted_state_ = state.at("encrypted_state");
         current_user_    = username;
+        store_->save_dek(username, encrypted_dek_.dump());
 
-        // TODO(persistence): store encrypted_dek_ / encrypted_state_ in the key store.
-        // TODO(network): create the server-side account via HTTPS POST /register —
-        // Connection is WSS-only, so login currently only works for a user already
-        // registered on the server. The key bundle itself is published over WS on login.
-        app_->push_status("Registered '" + username + "' — keys created. "
-                          "(server account + bundle publish happen on login)");
+        // TODO(persistence): store encrypted_state_ in the key store.
+        const nlohmann::json reg_body = {{"username", username}, {"password", password}};
+        const auto resp = https_post(host_, port_, "/backend/register", reg_body.dump());
+        if (resp.status == 409)
+            throw std::runtime_error{"username already taken"};
+        if (resp.status != 201)
+            throw std::runtime_error{"server returned HTTP " + std::to_string(resp.status)};
+
+        app_->push_status("Registered '" + username + "' — log in to open a session.");
     } catch (const std::exception& e) {
         app_->push_status(std::string("Registration failed: ") + e.what());
     }
@@ -140,7 +220,7 @@ void Client::do_login(const std::string& username, const std::string& password) 
 
         // Bring up the network. Callbacks must be set BEFORE connect(): the read
         // thread starts inside connect() and may fire on_message immediately.
-        connection_ = std::make_unique<Connection>(host_, port_);
+        connection_ = std::make_unique<Connection>(host_, port_, port_ == 443);
         connection_->on_message([this](std::string frame) { handle_ws_frame(frame); });
         connection_->on_disconnect(
             [this](std::string reason) { app_->push_status("Disconnected: " + reason); });
@@ -152,6 +232,7 @@ void Client::do_login(const std::string& username, const std::string& password) 
         send_login_frame(username, password);
         publish_key_bundle();
 
+        app_->advance_to_chat(username);
         app_->push_status("Logged in as '" + username + "' — session open.");
     } catch (const std::exception& e) {
         app_->push_status(std::string("Login failed: ") + e.what());

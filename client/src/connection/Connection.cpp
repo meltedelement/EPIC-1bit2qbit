@@ -58,8 +58,8 @@ std::string ws_header_value(const std::string& response, const std::string& name
 
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
-Connection::Connection(const std::string& host, uint16_t port)
-    : host_{host}, port_{port}, tcp_sock_{io_ctx_} {}
+Connection::Connection(const std::string& host, uint16_t port, bool tls)
+    : host_{host}, port_{port}, tls_{tls}, tcp_sock_{io_ctx_} {}
 
 Connection::~Connection() { disconnect(); }
 
@@ -71,7 +71,7 @@ void Connection::connect(const std::string& pinned_fp) {
     disconnect();
 
     tcp_connect();
-    tls_handshake(pinned_fp);
+    if (tls_) tls_handshake(pinned_fp);
     ws_handshake();
     connected_ = true;
     running_   = true;
@@ -161,28 +161,40 @@ void Connection::tls_handshake(const std::string& pinned_fp) {
 
 std::string Connection::ssl_read_exact(size_t n) {
     std::string buf(n, '\0');
-    size_t total = 0;
-    while (total < n) {
-        int got = SSL_read(ssl_, buf.data() + total, static_cast<int>(n - total));
-        if (got <= 0) {
-            int err = SSL_get_error(ssl_, got);
-            throw std::runtime_error{"SSL_read failed: error code " + std::to_string(err)};
+    if (tls_) {
+        size_t total = 0;
+        while (total < n) {
+            int got = SSL_read(ssl_, buf.data() + total, static_cast<int>(n - total));
+            if (got <= 0) {
+                int err = SSL_get_error(ssl_, got);
+                throw std::runtime_error{"SSL_read failed: error code " + std::to_string(err)};
+            }
+            total += static_cast<size_t>(got);
         }
-        total += static_cast<size_t>(got);
+    } else {
+        boost::system::error_code ec;
+        boost::asio::read(tcp_sock_, boost::asio::buffer(buf.data(), n), ec);
+        if (ec) throw std::runtime_error{"read failed: " + ec.message()};
     }
     return buf;
 }
 
 void Connection::ssl_write_all(const std::string& data) {
-    size_t total = 0;
-    while (total < data.size()) {
-        int written = SSL_write(ssl_, data.data() + total,
-                                static_cast<int>(data.size() - total));
-        if (written <= 0) {
-            int err = SSL_get_error(ssl_, written);
-            throw std::runtime_error{"SSL_write failed: error code " + std::to_string(err)};
+    if (tls_) {
+        size_t total = 0;
+        while (total < data.size()) {
+            int written = SSL_write(ssl_, data.data() + total,
+                                    static_cast<int>(data.size() - total));
+            if (written <= 0) {
+                int err = SSL_get_error(ssl_, written);
+                throw std::runtime_error{"SSL_write failed: error code " + std::to_string(err)};
+            }
+            total += static_cast<size_t>(written);
         }
-        total += static_cast<size_t>(written);
+    } else {
+        boost::system::error_code ec;
+        boost::asio::write(tcp_sock_, boost::asio::buffer(data.data(), data.size()), ec);
+        if (ec) throw std::runtime_error{"write failed: " + ec.message()};
     }
 }
 
@@ -201,7 +213,7 @@ std::string Connection::ws_key_base64() {
 void Connection::ws_handshake() {
     std::string key = ws_key_base64();
     std::string request =
-        "GET / HTTP/1.1\r\n"
+        "GET /backend/ws HTTP/1.1\r\n"
         "Host: "                  + host_               + "\r\n"
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
@@ -215,10 +227,7 @@ void Connection::ws_handshake() {
     std::string response;
     while (response.size() < 4
            || response.substr(response.size() - 4) != "\r\n\r\n") {
-        char c;
-        int got = SSL_read(ssl_, &c, 1);
-        if (got <= 0) throw std::runtime_error{"ws_handshake: connection closed during upgrade"};
-        response += c;
+        response += ssl_read_exact(1);
         if (response.size() > 8192)
             throw std::runtime_error{"ws_handshake: response header too large"};
     }
