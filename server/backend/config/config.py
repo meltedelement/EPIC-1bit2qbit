@@ -53,6 +53,7 @@ class MessagingConfig(BaseModel):
     edit_window_minutes: int
     edit_grace_seconds: int
     message_ttl_days: int
+    ttl_cleanup_interval_hours: int
 
 
 class BlockchainConfig(BaseModel):

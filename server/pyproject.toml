@@ -23,8 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-epic-api        = "backend.main:main"
-epic-api-initdb = "backend.main:init_db"
+epic-1bit2qbit-backend = "backend.main:main"
 
 [tool.pytest.ini_options]
 pythonpath = [".", "backend/blockchain"]
