@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 def make_ws_app(router) -> tuple[FastAPI, TestClient]:
     app = FastAPI()
     app.state.sessions = SessionRegistry()
-    app.state.rate_limiter = RateLimiter()
+    app.state.rate_limiter = RateLimiter(max_window_seconds=900)
     app.include_router(router)
     return app, TestClient(app)
 

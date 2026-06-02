@@ -26,7 +26,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     application.state.sessions = SessionRegistry()
     logger.info("Session registry initialized")
 
-    application.state.rate_limiter = RateLimiter()
+    max_window = config.rate_limiting.ws_auth_fail_window_seconds
+    application.state.rate_limiter = RateLimiter(max_window_seconds=max_window)
     logger.info("Rate limiter initialized")
 
     batcher_task = asyncio.create_task(batcher.loop(), name="batcher")

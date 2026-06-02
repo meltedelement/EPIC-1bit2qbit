@@ -37,31 +37,31 @@ class TestClientIp:
 
 class TestRateLimiterHit:
     def test_allows_requests_under_limit(self):
-        rl = RateLimiter()
+        rl = RateLimiter(max_window_seconds=900)
         for _ in range(5):
             assert rl.hit("ip", 5, 60) == 0
 
     def test_blocks_when_limit_reached(self):
-        rl = RateLimiter()
+        rl = RateLimiter(max_window_seconds=900)
         for _ in range(5):
             rl.hit("ip", 5, 60)
         assert rl.hit("ip", 5, 60) > 0
 
     def test_retry_after_is_at_least_one(self):
-        rl = RateLimiter()
+        rl = RateLimiter(max_window_seconds=900)
         for _ in range(3):
             rl.hit("ip", 3, 60)
         assert rl.hit("ip", 3, 60) >= 1
 
     def test_different_keys_are_independent(self):
-        rl = RateLimiter()
+        rl = RateLimiter(max_window_seconds=900)
         for _ in range(3):
             rl.hit("blocked-ip", 3, 60)
         rl.hit("blocked-ip", 3, 60)  # now blocked
         assert rl.hit("other-ip", 3, 60) == 0
 
     def test_expired_hits_are_pruned(self):
-        rl = RateLimiter()
+        rl = RateLimiter(max_window_seconds=900)
         t = 1000.0
         with patch("backend.rate_limit.time.monotonic", return_value=t):
             for _ in range(3):
@@ -70,28 +70,28 @@ class TestRateLimiterHit:
             assert rl.hit("ip", 3, 60) == 0
 
     def test_expired_key_is_removed_from_map(self):
-        rl = RateLimiter()
+        rl = RateLimiter(max_window_seconds=900)
         t = 1000.0
         with patch("backend.rate_limit.time.monotonic", return_value=t):
             rl.hit("ip", 5, 60)
-        with patch("backend.rate_limit.time.monotonic", return_value=t + 61.0):
-            rl.is_blocked("ip", 5, 60)  # prunes without recording — key should be deleted
+        with patch("backend.rate_limit.time.monotonic", return_value=t + 901.0):
+            rl.sweep()  # max_window=900, so entry is now stale
         assert len(rl) == 0
 
 
 class TestRateLimiterIsBlocked:
     def test_returns_zero_when_under_limit(self):
-        rl = RateLimiter()
+        rl = RateLimiter(max_window_seconds=900)
         assert rl.is_blocked("ip", 5, 60) == 0
 
     def test_returns_retry_after_when_blocked(self):
-        rl = RateLimiter()
+        rl = RateLimiter(max_window_seconds=900)
         for _ in range(5):
             rl.hit("ip", 5, 60)
         assert rl.is_blocked("ip", 5, 60) >= 1
 
     def test_does_not_record_a_hit(self):
-        rl = RateLimiter()
+        rl = RateLimiter(max_window_seconds=900)
         limit = 3
         for _ in range(10):
             rl.is_blocked("ip", limit, 60)
@@ -103,7 +103,7 @@ class TestRegisterRateLimit:
 
     def _make_app(self) -> tuple[FastAPI, TestClient]:
         app = FastAPI()
-        app.state.rate_limiter = RateLimiter()
+        app.state.rate_limiter = RateLimiter(max_window_seconds=900)
         app.dependency_overrides[get_db] = MagicMock
         app.include_router(auth_router)
         return app, TestClient(app)
@@ -147,7 +147,7 @@ class TestWsAuthRateLimit:
     def _make_app(self) -> tuple[FastAPI, TestClient]:
         app = FastAPI()
         app.state.sessions = SessionRegistry()
-        app.state.rate_limiter = RateLimiter()
+        app.state.rate_limiter = RateLimiter(max_window_seconds=900)
         app.include_router(ws_router)
         return app, TestClient(app)
 

@@ -24,14 +24,31 @@ def client_ip(headers, client) -> str:
 class RateLimiter:
     """In-process sliding-window rate limiter. Thread-safe; single-worker deployments only."""
 
-    def __init__(self) -> None:
+    _SWEEP_EVERY = 500
+
+    def __init__(self, max_window_seconds: int) -> None:
         self._lock = threading.Lock()
         self._windows: dict[str, deque[float]] = {}
+        self._max_window = max_window_seconds
+        self._hit_count = 0
 
     def __len__(self) -> int:
         """Number of IPs currently tracked (i.e. with at least one unexpired hit)."""
         with self._lock:
             return len(self._windows)
+
+    def _sweep_unlocked(self) -> int:
+        """Evict keys with no hits in the last max_window_seconds. Must be called with lock held."""
+        cutoff = time.monotonic() - self._max_window
+        stale = [key for key, dq in self._windows.items() if dq[-1] <= cutoff]
+        for key in stale:
+            del self._windows[key]
+        return len(stale)
+
+    def sweep(self) -> int:
+        """Evict stale keys. Returns the number of keys removed."""
+        with self._lock:
+            return self._sweep_unlocked()
 
     def _prune(self, key: str, cutoff: float) -> deque[float] | None:
         """Remove expired timestamps and delete the entry if it becomes empty.
@@ -49,6 +66,9 @@ class RateLimiter:
     def hit(self, key: str, limit: int, window_seconds: int) -> int:
         """Record a hit. Returns 0 if within limit, else seconds until the oldest slot expires."""
         with self._lock:
+            self._hit_count += 1
+            if self._hit_count % self._SWEEP_EVERY == 0:
+                self._sweep_unlocked()
             now = time.monotonic()
             dq = self._prune(key, now - window_seconds)
             if dq is None:
