@@ -1,6 +1,19 @@
 import asyncio
 from unittest.mock import MagicMock
 
+from backend.rate_limit import RateLimiter
+from backend.session import SessionRegistry
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+
+def make_ws_app(router) -> tuple[FastAPI, TestClient]:
+    app = FastAPI()
+    app.state.sessions = SessionRegistry()
+    app.state.rate_limiter = RateLimiter()
+    app.include_router(router)
+    return app, TestClient(app)
+
 
 def _session_cm(db):
     """Wrap a mock db into a context manager that SessionLocal() can return."""
