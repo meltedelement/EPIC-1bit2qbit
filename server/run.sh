@@ -64,6 +64,20 @@ nginx_reload() {
     fi
 }
 
+colorize_nginx_logs() {
+    awk '
+        /\[emerg\]|\[alert\]|\[crit\]|\[error\]/ { print "\033[1;31m" $0 "\033[0m"; fflush(); next }
+        /\[warn\]/                                { print "\033[1;33m" $0 "\033[0m"; fflush(); next }
+        /\[notice\]|\[info\]/                    { print "\033[1;32m" $0 "\033[0m"; fflush(); next }
+        /\[debug\]/                              { print "\033[0;36m" $0 "\033[0m"; fflush(); next }
+        /" 5[0-9][0-9] /                         { print "\033[1;31m" $0 "\033[0m"; fflush(); next }
+        /" 4[0-9][0-9] /                         { print "\033[1;33m" $0 "\033[0m"; fflush(); next }
+        /" 3[0-9][0-9] /                         { print "\033[1;36m" $0 "\033[0m"; fflush(); next }
+        /" 2[0-9][0-9] /                         { print "\033[1;32m" $0 "\033[0m"; fflush(); next }
+        { print; fflush() }
+    '
+}
+
 # Sets DO_BACKEND, DO_VERIFY, and REBUILD_VERIFY based on flags.
 # REBUILD_VERIFY is false only when --backend is passed alone — every other
 # combination that includes verify should rebuild the frontend.
@@ -274,24 +288,24 @@ cmd_logs() {
         fi
     fi
 
-    local nginx_logs=(/var/log/nginx/access.log /var/log/nginx/error.log)
+    local nginx_logs=(/var/log/nginx/verify.access.log /var/log/nginx/verify.error.log)
 
     if [[ "$DO_BACKEND" == true && "$DO_VERIFY" == true ]]; then
         info "Tailing all logs — Ctrl+C to stop"
         trap 'kill $(jobs -p) 2>/dev/null || true; exit' INT TERM EXIT
         if [[ ${#backend_files[@]} -gt 0 ]]; then
-            tail -F "${backend_files[@]}" &
+            tail -qF "${backend_files[@]}" &
         fi
         sudo -v  # cache credentials before backgrounding — avoids a prompt inside &
-        sudo tail -F "${nginx_logs[@]}" &
+        sudo tail -F "${nginx_logs[@]}" | colorize_nginx_logs &
         wait
     elif [[ "$DO_BACKEND" == true ]]; then
         if [[ ${#backend_files[@]} -eq 0 ]]; then exit 0; fi
         info "Tailing backend logs — Ctrl+C to stop"
-        exec tail -F "${backend_files[@]}"
+        exec tail -qF "${backend_files[@]}"
     else
         info "Tailing nginx logs — Ctrl+C to stop"
-        exec sudo tail -F "${nginx_logs[@]}"
+        sudo tail -F "${nginx_logs[@]}" | colorize_nginx_logs
     fi
 }
 
