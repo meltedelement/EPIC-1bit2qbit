@@ -337,6 +337,14 @@ def _process(request: dict) -> dict:
 
 
 def main() -> None:
+    # Windows defaults stdin/stdout to the system ANSI code page (e.g. cp1252).
+    # The doubleratchet library stores raw byte values as Latin-1 characters, which
+    # nlohmann serialises as UTF-8 multibyte sequences. Reconfigure to UTF-8 so
+    # those sequences roundtrip correctly instead of being decoded as cp1252 and
+    # producing code points > 255 that Pydantic rejects.
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
+
     for line in sys.stdin:
         line = line.strip()
         if not line:
