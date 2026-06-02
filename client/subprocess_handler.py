@@ -189,7 +189,7 @@ def _handle_create_state(_: dict) -> dict:
 def _handle_get_bundle(p: dict) -> dict:
     dek = _require_dek()
     state = _unwrap_state(p["encrypted_state"], dek)
-    return _serialize_bundle(state.bundle)
+    return {"bundle": _serialize_bundle(state.bundle), "encrypted_state": _wrap_state(state, dek)}
 
 
 def _handle_generate_pre_keys(p: dict) -> dict:
