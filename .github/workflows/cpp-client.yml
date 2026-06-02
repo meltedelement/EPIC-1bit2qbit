@@ -1,0 +1,32 @@
+name: C++ Client Build
+
+# Compiles the C++ client so a broken build can't reach main. Runs only when
+# the client or this workflow changes. FTXUI / nlohmann_json / CLI11 are pulled
+# in by CMake FetchContent; Boost (header-only Asio) and OpenSSL come from apt.
+on:
+  push:
+    paths:
+      - "client/**"
+      - ".github/workflows/cpp-client.yml"
+  pull_request:
+    paths:
+      - "client/**"
+      - ".github/workflows/cpp-client.yml"
+
+jobs:
+  build-client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ libssl-dev libboost-dev
+
+      - name: Configure
+        run: cmake -B client/build -S client -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build client/build -j"$(nproc)"

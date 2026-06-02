@@ -58,8 +58,8 @@ std::string ws_header_value(const std::string& response, const std::string& name
 
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
-Connection::Connection(const std::string& host, uint16_t port)
-    : host_{host}, port_{port}, tcp_sock_{io_ctx_} {}
+Connection::Connection(const std::string& host, uint16_t port, const std::string& path)
+    : host_{host}, port_{port}, path_{path}, tcp_sock_{io_ctx_} {}
 
 Connection::~Connection() { disconnect(); }
 
@@ -201,7 +201,7 @@ std::string Connection::ws_key_base64() {
 void Connection::ws_handshake() {
     std::string key = ws_key_base64();
     std::string request =
-        "GET / HTTP/1.1\r\n"
+        "GET " + path_ + " HTTP/1.1\r\n"
         "Host: "                  + host_               + "\r\n"
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
