@@ -68,8 +68,22 @@ void Client::do_login(const std::string& username, const std::string& password) 
         }
         crypto_->unlock_dek(password, username, encrypted_dek_);
         current_user_ = username;
-        // TODO(network): open the WSS connection and send the login frame.
-        app_->push_status("Logged in as '" + username + "' — DEK unlocked.");
+
+        // Open the WSS connection and send the login frame. The login frame is the
+        // first thing on the wire — the connection itself is the session (no tokens),
+        // so a bad password closes the socket (4001) and surfaces via on_disconnect.
+        // Callbacks must be set before connect(): the read thread starts inside it.
+        connection_ = std::make_unique<Connection>(host_, port_);
+        connection_->on_message([this](std::string frame) { handle_ws_frame(frame); });
+        connection_->on_disconnect(
+            [this](std::string reason) { app_->push_status("Disconnected: " + reason); });
+        // TODO(persistence): persist the observed cert_fingerprint() in MessageStore
+        // and pass it back here. Until then, trust-on-first-use for the server cert.
+        connection_->connect();
+        connection_->send_text(
+            nlohmann::json{{"username", username}, {"password", password}}.dump());
+
+        app_->push_status("Logged in as '" + username + "' — connected to server.");
     } catch (const std::exception& e) {
         app_->push_status(std::string("Login failed: ") + e.what());
     }
