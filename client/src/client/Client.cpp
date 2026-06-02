@@ -228,8 +228,14 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
             crypto_->unlock_dek(key_pin, username, encrypted_dek_);
         } catch (const std::exception&) {
             ++pin_fail_count_;
-            int delay = std::min(5 * (1 << (pin_fail_count_ - 1)), 300);
-            app_->start_lockout(delay);
+            if (pin_fail_count_ < 3) {
+                app_->push_status("Incorrect PIN — " + std::to_string(3 - pin_fail_count_) +
+                                  " attempt(s) remaining before lockout.");
+            } else {
+                int lockout_num = pin_fail_count_ - 2;
+                int delay = std::min(5 * (1 << (lockout_num - 1)), 300);
+                app_->start_lockout(delay);
+            }
             return;
         }
         pin_fail_count_ = 0;  // reset on success
