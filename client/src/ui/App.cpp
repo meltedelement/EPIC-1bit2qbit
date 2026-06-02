@@ -73,9 +73,10 @@ void App::push_sent_message(const std::string& recipient, const std::string& bod
             it = conversations_.end() - 1;
         }
         Message m;
-        m.peer      = recipient;
-        m.recipient = recipient;  // recipient != local_username_ → renders as "you"
-        m.body      = body;
+        m.peer         = recipient;
+        m.recipient    = recipient;  // recipient != local_username_ → renders as "you"
+        m.timestamp_ms = now_ms();
+        m.body         = body;
         it->add_message(std::move(m));
     };
     if (screen_ptr_)
