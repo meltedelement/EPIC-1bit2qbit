@@ -1,6 +1,7 @@
 #include "client/Client.h"
 
 #include <array>
+#include <chrono>
 #include <exception>
 #include <stdexcept>
 #include <utility>
@@ -151,8 +152,8 @@ void Client::run() {
     store_  = std::make_unique<MessageStore>("epic-client.db");
 
     AppCallbacks cbs;
-    cbs.on_register = [this](std::string u, std::string p) { do_register(u, p); };
-    cbs.on_login    = [this](std::string u, std::string p) { do_login(u, p); };
+    cbs.on_register = [this](std::string u, std::string p, std::string pin) { do_register(u, p, pin); };
+    cbs.on_login    = [this](std::string u, std::string p, std::string pin) { do_login(u, p, pin); };
     cbs.on_send     = [this](std::string r, std::string t) { do_send(r, t); };
     cbs.on_delete   = [this](uint64_t id, bool both) { do_delete(id, both); };
     cbs.on_edit     = [this](uint64_t id, std::string t) { do_edit(id, t); };
@@ -172,36 +173,36 @@ void Client::run() {
 
 // ── Outbound actions (called from UI) ────────────────────────────────────────────
 
-void Client::do_register(const std::string& username, const std::string& password) {
-    // Registration derives a fresh Data Encryption Key from the user's password and
-    // a fresh X3DH state (identity key, signed pre-key, one-time pre-keys). The raw
-    // DEK stays inside the crypto subprocess; the encrypted blobs come back here.
+void Client::do_register(const std::string& username, const std::string& auth_password,
+                         const std::string& key_pin) {
+    if (auth_password == key_pin) {
+        app_->push_status("Registration failed: authentication password and Key PIN must be different.");
+        return;
+    }
     try {
         std::lock_guard<std::mutex> lk(mutex_);
-        const nlohmann::json dek = crypto_->create_dek(password, username);
-        encrypted_dek_ = dek.at("encrypted_dek");
 
-        const nlohmann::json state = crypto_->create_state();
-        encrypted_state_ = state.at("encrypted_state");
+        encrypted_dek_   = crypto_->create_dek(key_pin, username).at("encrypted_dek");
+        encrypted_state_ = crypto_->create_state().at("encrypted_state");
         current_user_    = username;
         store_->save_dek(username, encrypted_dek_.dump());
+        store_->save_encrypted_state(username, encrypted_state_.dump());
 
-        // TODO(persistence): store encrypted_state_ in the key store.
-        const nlohmann::json reg_body = {{"username", username}, {"password", password}};
+        const nlohmann::json reg_body = {{"username", username}, {"password", auth_password}};
         const auto resp = https_post(host_, port_, "/backend/register", reg_body.dump());
         if (resp.status == 409)
             throw std::runtime_error{"username already taken"};
         if (resp.status != 201)
             throw std::runtime_error{"server returned HTTP " + std::to_string(resp.status)};
 
-        app_->push_status("Registered '" + username + "' — keys created. "
-                          "(server account + bundle publish happen on login)");
+        app_->push_status("Registered '" + username + "' — log in to open a session.");
     } catch (const std::exception& e) {
         app_->push_status(std::string("Registration failed: ") + e.what());
     }
 }
 
-void Client::do_login(const std::string& username, const std::string& password) {
+void Client::do_login(const std::string& username, const std::string& auth_password,
+                      const std::string& key_pin) {
     try {
         // Load the persisted DEK blob if we don't have it in memory already.
         if (encrypted_dek_.is_null()) {
@@ -215,8 +216,29 @@ void Client::do_login(const std::string& username, const std::string& password) 
         }
         {
             std::lock_guard<std::mutex> lk(mutex_);
-            crypto_->unlock_dek(password, username, encrypted_dek_);
+            crypto_->unlock_dek(key_pin, username, encrypted_dek_);
         }
+
+        // Load persisted X3DH state (needed to establish new sessions after restart).
+        if (encrypted_state_.is_null()) {
+            if (auto stored = store_->load_encrypted_state(username))
+                encrypted_state_ = nlohmann::json::parse(*stored);
+        }
+
+        // Restore conversation history — populate both the Client's crypto map
+        // (needed for ratchet state on inbound messages) and the UI.
+        {
+            std::vector<Conversation> convs;
+            for (const auto& peer : store_->list_peers()) {
+                if (auto conv = store_->load_conversation(peer)) {
+                    conversations_.insert_or_assign(peer, *conv);
+                    convs.push_back(std::move(*conv));
+                }
+            }
+            if (!convs.empty())
+                app_->set_conversations(std::move(convs));
+        }
+
         current_user_ = username;
 
         // Bring up the network. Callbacks must be set BEFORE connect(): the read
@@ -230,7 +252,7 @@ void Client::do_login(const std::string& username, const std::string& password) 
         if (server_cert_pin_.empty()) server_cert_pin_ = connection_->cert_fingerprint();
 
         // First WS frame is the login (no tokens — the connection is the session).
-        send_login_frame(username, password);
+        send_login_frame(username, auth_password);
         publish_key_bundle();
 
         app_->advance_to_chat(username);
@@ -363,12 +385,16 @@ void Client::on_deliver_message(const nlohmann::json& frame) {
             conv.set_ratchet_state(dec.at("ratchet_state").dump());
             conv.set_pinned_ik_pub(peer_ik);
             store_->pin_identity_key(sender, peer_ik);
+            store_->save_associated_data(sender, conv.associated_data());
+            store_->save_ratchet_state(sender, conv.ratchet_state());
+            store_->save_encrypted_state(current_user_, encrypted_state_.dump());
             plaintext_b64 = dec.at("plaintext").get<std::string>();
         } else if (!conv.ratchet_state().empty()) {
             // Established session — decrypt with the stored ratchet state.
             nlohmann::json rstate    = nlohmann::json::parse(conv.ratchet_state());
             const nlohmann::json dec = crypto_->decrypt_message(rstate, dr, conv.associated_data());
             conv.set_ratchet_state(dec.at("ratchet_state").dump());
+            store_->save_ratchet_state(sender, conv.ratchet_state());
             plaintext_b64 = dec.at("plaintext").get<std::string>();
         } else {
             app_->push_status("Dropped message from '" + sender +
@@ -421,6 +447,7 @@ void Client::encrypt_and_send(Conversation& conv, const std::string& plaintext) 
     const nlohmann::json enc = crypto_->encrypt_message(rstate, content_to_message(plaintext),
                                                         conv.associated_data());
     conv.set_ratchet_state(enc.at("ratchet_state").dump());
+    store_->save_ratchet_state(conv.peer(), conv.ratchet_state());
     send_chat_frame(conv.peer(), enc.at("encrypted_message"), nullptr);
 }
 
@@ -452,6 +479,9 @@ void Client::start_session_and_send(const std::string& peer, const nlohmann::jso
     conv.set_ratchet_state(enc.at("ratchet_state").dump());
     conv.set_pinned_ik_pub(peer_ik);
     store_->pin_identity_key(peer, peer_ik);
+    store_->save_associated_data(peer, conv.associated_data());
+    store_->save_ratchet_state(peer, conv.ratchet_state());
+    store_->save_encrypted_state(current_user_, encrypted_state_.dump());
 
     const nlohmann::json header = ss.at("header");
     send_chat_frame(peer, enc.at("encrypted_message"), &header);
@@ -467,21 +497,13 @@ void Client::send_chat_frame(const std::string& recipient, const nlohmann::json&
         {"type", "send_message"},
         {"recipient", recipient},
         {"ciphertext", env.dump()},
-        {"mid", new_mid()},
+        {"mid", new_mid(recipient)},
     };
     connection_->send_text(frame.dump());
 }
 
-std::string Client::new_mid() {
-    std::array<unsigned char, 16> buf{};
-    if (RAND_bytes(buf.data(), static_cast<int>(buf.size())) != 1)
-        throw std::runtime_error{"RAND_bytes failed generating message id"};
-    static constexpr char kHex[] = "0123456789abcdef";
-    std::string mid;
-    mid.reserve(buf.size() * 2);
-    for (unsigned char b : buf) {
-        mid += kHex[b >> 4];
-        mid += kHex[b & 0x0f];
-    }
-    return mid;
+std::string Client::new_mid(const std::string& recipient) const {
+    const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    return current_user_ + ":" + recipient + ":" + std::to_string(now_ms);
 }

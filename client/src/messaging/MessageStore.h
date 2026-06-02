@@ -29,9 +29,12 @@ public:
     void pin_identity_key(const std::string& username, const std::string& ik_pub);
     std::optional<std::string> load_pinned_identity_key(const std::string& username) const;
 
-    // ── Encrypted DEK persistence ──────────────────────────────────────────────
+    // ── Encrypted DEK / X3DH state persistence ────────────────────────────────
     void save_dek(const std::string& username, const std::string& encrypted_dek_json);
     std::optional<std::string> load_dek(const std::string& username) const;
+
+    void save_encrypted_state(const std::string& username, const std::string& state_json);
+    std::optional<std::string> load_encrypted_state(const std::string& username) const;
 
 private:
     std::string db_path_;

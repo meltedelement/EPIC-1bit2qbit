@@ -27,8 +27,10 @@ public:
 
 private:
     // Outbound actions (called from UI)
-    void do_register(const std::string& username, const std::string& password);
-    void do_login(const std::string& username, const std::string& password);
+    void do_register(const std::string& username, const std::string& auth_password,
+                     const std::string& key_pin);
+    void do_login(const std::string& username, const std::string& auth_password,
+                  const std::string& key_pin);
     void do_send(const std::string& recipient, const std::string& plaintext);
     void do_delete(uint64_t message_id, bool for_both_parties);
     void do_edit(uint64_t message_id, const std::string& new_plaintext);
@@ -53,7 +55,7 @@ private:
                                           const std::string& plaintext);
     void           send_chat_frame(const std::string& recipient, const nlohmann::json& dr_message,
                                    const nlohmann::json* x3dh_header);
-    static std::string new_mid();
+    std::string new_mid(const std::string& recipient) const;
 
     std::string                    host_;
     uint16_t                       port_;

@@ -31,21 +31,41 @@ int64_t now_ms() {
 
 App::App(AppCallbacks cbs) : cbs_{std::move(cbs)} {}
 
-void App::push_status(std::string msg) { status_msg_ = std::move(msg); }
+void App::push_status(std::string msg) {
+    if (screen_ptr_) {
+        screen_ptr_->Post([this, m = std::move(msg)]() mutable { status_msg_ = std::move(m); });
+    } else {
+        status_msg_ = std::move(msg);
+    }
+}
 
 void App::push_message(const std::string& sender, const std::string& body) {
-    auto it = std::find_if(conversations_.begin(), conversations_.end(),
-                           [&](const Conversation& c) { return c.peer() == sender; });
-    if (it == conversations_.end()) {
-        conversations_.emplace_back(Conversation{sender});
-        conv_names_.push_back(sender);
-        it = conversations_.end() - 1;
-    }
-    Message m;
-    m.peer      = sender;
-    m.recipient = local_username_;
-    m.body      = body;
-    it->add_message(std::move(m));
+    auto update = [this, sender, body] {
+        auto it = std::find_if(conversations_.begin(), conversations_.end(),
+                               [&](const Conversation& c) { return c.peer() == sender; });
+        if (it == conversations_.end()) {
+            conversations_.emplace_back(Conversation{sender});
+            conv_names_.push_back(sender);
+            it = conversations_.end() - 1;
+        }
+        Message m;
+        m.peer      = sender;
+        m.recipient = local_username_;
+        m.body      = body;
+        it->add_message(std::move(m));
+    };
+    if (screen_ptr_)
+        screen_ptr_->Post(update);
+    else
+        update();
+}
+
+void App::set_conversations(std::vector<Conversation> convs) {
+    conversations_ = std::move(convs);
+    conv_names_.clear();
+    for (const auto& c : conversations_)
+        conv_names_.push_back(c.peer());
+    selected_conv_ = 0;
 }
 
 void App::advance_to_chat(std::string username) {
@@ -85,25 +105,26 @@ void App::run() {
     auto screen = ScreenInteractive::Fullscreen();
 
     // ── Login ─────────────────────────────────────────────────────────────────
-    InputOption pin_opt;
-    pin_opt.password = true;
+    InputOption pwd_opt;
+    pwd_opt.password = true;
 
     auto username_input = Input(&login_username_, "username");
-    auto pin_input      = Input(&login_pin_,      "PIN", pin_opt);
+    auto password_input = Input(&login_password_, "password",   pwd_opt);
+    auto key_pin_input  = Input(&login_key_pin_,  "key PIN",    pwd_opt);
 
     auto login_btn = Button(" Login ", [&] {
-        if (login_username_.empty() || login_pin_.empty()) return;
+        if (login_username_.empty() || login_password_.empty() || login_key_pin_.empty()) return;
         if (cbs_.on_login) {
-            cbs_.on_login(login_username_, login_pin_);
+            cbs_.on_login(login_username_, login_password_, login_key_pin_);
         } else {
             advance_to_chat(login_username_);
         }
     }, ButtonOption::Ascii());
 
     auto register_btn = Button(" Register ", [&] {
-        if (login_username_.empty() || login_pin_.empty()) return;
+        if (login_username_.empty() || login_password_.empty() || login_key_pin_.empty()) return;
         if (cbs_.on_register) {
-            cbs_.on_register(login_username_, login_pin_);
+            cbs_.on_register(login_username_, login_password_, login_key_pin_);
         } else {
             advance_to_chat(login_username_);
         }
@@ -111,7 +132,8 @@ void App::run() {
 
     auto login_form = Container::Vertical({
         username_input,
-        pin_input,
+        password_input,
+        key_pin_input,
         Container::Horizontal({register_btn, login_btn}),
     });
 
@@ -129,7 +151,8 @@ void App::run() {
                     text("End-to-end encrypted messaging") | dim | center,
                     separator(),
                     hbox({text(" Username : "), username_input->Render() | flex}),
-                    hbox({text(" PIN      : "), pin_input->Render()      | flex}),
+                    hbox({text(" Password : "), password_input->Render() | flex}),
+                    hbox({text(" Key PIN  : "), key_pin_input->Render()  | flex}),
                     separator(),
                     hbox({
                         filler(),
@@ -269,5 +292,7 @@ void App::run() {
 
     // ── Root ──────────────────────────────────────────────────────────────────
     auto root = Container::Tab(Components{login_renderer, chat_renderer}, &screen_);
+    screen_ptr_ = &screen;
     screen.Loop(root);
+    screen_ptr_ = nullptr;
 }
