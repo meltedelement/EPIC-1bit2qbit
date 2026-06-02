@@ -194,7 +194,8 @@ void Client::do_register(const std::string& username, const std::string& passwor
         if (resp.status != 201)
             throw std::runtime_error{"server returned HTTP " + std::to_string(resp.status)};
 
-        app_->push_status("Registered '" + username + "' — log in to open a session.");
+        app_->push_status("Registered '" + username + "' — keys created. "
+                          "(server account + bundle publish happen on login)");
     } catch (const std::exception& e) {
         app_->push_status(std::string("Registration failed: ") + e.what());
     }

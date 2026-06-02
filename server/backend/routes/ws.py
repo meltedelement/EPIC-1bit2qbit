@@ -13,7 +13,7 @@ from ..session import SessionRegistry
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ws"])
 
-_MAX_MESSAGE_LEN = 4096
+_MAX_MESSAGE_LEN = 16384
 _MAX_CONSECUTIVE_ERRORS = 5
 
 _frame_adapter: TypeAdapter[InboundFrame] = TypeAdapter(InboundFrame)
