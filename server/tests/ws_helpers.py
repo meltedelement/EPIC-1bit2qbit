@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import MagicMock
 
 
@@ -14,3 +15,16 @@ def _empty_drain():
     db = MagicMock()
     db.scalars.return_value.all.return_value = []
     return _session_cm(db)
+
+
+class _CancelAfter:
+    """Async sleep replacement that raises CancelledError after n calls."""
+
+    def __init__(self, n=2):
+        self.calls = 0
+        self.n = n
+
+    async def __call__(self, _):
+        self.calls += 1
+        if self.calls >= self.n:
+            raise asyncio.CancelledError

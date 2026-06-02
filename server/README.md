@@ -26,6 +26,9 @@ sudo apt install nodejs npm
 
 # nginx
 sudo apt install nginx
+
+# MySQL 8+
+sudo apt install mysql-server
 ```
 
 Minimum versions:
@@ -37,6 +40,7 @@ Minimum versions:
 | Node.js | 18 |
 | npm | 9 |
 | nginx | 1.18 |
+| MySQL | 8.0 |
 
 ---
 
@@ -49,10 +53,11 @@ chmod +x run.sh
 ```
 
 `setup` will:
-1. Create a Python virtual environment (`.venv/`) if one doesn't exist
-2. Install Python dependencies (`pip install -e ".[dev]"`)
-3. Install Node dependencies and build the React frontend (`web-app/dist/`)
-4. Copy `nginx.conf` to `/etc/nginx/sites-available/`, enable it, and validate it
+1. Create the `epic` MySQL database and user (idempotent — safe to re-run)
+2. Create a Python virtual environment (`.venv/`) if one doesn't exist
+3. Install Python dependencies (`pip install -e ".[dev]"`)
+4. Install Node dependencies and build the React frontend (`web-app/dist/`)
+5. Copy `nginx.conf` to `/etc/nginx/sites-available/`, enable it, and validate it
 
 ---
 
