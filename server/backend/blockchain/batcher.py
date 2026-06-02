@@ -82,8 +82,8 @@ def _submit_batch(messages: list[str]) -> dict:
 
     if not Web3.is_address(contract_address):
         raise ValueError(
-            f"CONTRACT_ADDRESS in .env is not a valid Ethereum address (got {contract_address!r}) — "
-            "deploy the contract and set the address in .env"
+            f"CONTRACT_ADDRESS in .env is not a valid Ethereum address "
+            f"(got {contract_address!r}) — deploy the contract and set the address in .env"
         )
 
     w3 = Web3(Web3.HTTPProvider(rpc_url))
