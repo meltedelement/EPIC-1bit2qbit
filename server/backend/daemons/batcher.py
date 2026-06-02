@@ -36,15 +36,6 @@ def _run_batch() -> int:
         )
         db.commit()
 
-    for r in results:
-        logger.info(
-            "Batch anchored — tx=%s root=%s batch_index=%d leaf_count=%d",
-            r["tx_hash"],
-            r["root"],
-            r["batch_index"],
-            r["leaf_count"],
-        )
-
     return len(row_ids)
 
 

@@ -92,4 +92,24 @@ def setup_logging(config, script_path=None):
         enabled_levels.append(_get_log_level(file_config["level"]))
 
     root_logger.setLevel(min(enabled_levels) if enabled_levels else logging.WARNING)
+
+    # The websockets library logs raw WebSocket frame content at DEBUG
+    # (e.g. "< TEXT '{"password":...}'"), which exposes plaintext credentials.
+    # Drop only data-frame lines; keep HTTP upgrade headers and connection-state
+    # lines (= / %) which are useful for debugging.
+    import re as _re
+    _FRAME_RE = _re.compile(r"^[<>] (?:TEXT|BINARY|PING|PONG) ")
+
+    class _SuppressWsFrames(logging.Filter):
+        def filter(self, record):
+            return not _FRAME_RE.match(record.getMessage())
+
+    logging.getLogger("websockets").addFilter(_SuppressWsFrames())
+    logging.getLogger("uvicorn.error").addFilter(_SuppressWsFrames())
+
+    # web3 and urllib3 log every RPC call and HTTP connection at DEBUG.
+    # The batcher already emits INFO-level summaries, so suppress the noise.
+    for _lib in ("web3", "urllib3"):
+        logging.getLogger(_lib).setLevel(logging.WARNING)
+
     return root_logger
