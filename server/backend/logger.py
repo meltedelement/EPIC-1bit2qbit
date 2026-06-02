@@ -91,5 +91,5 @@ def setup_logging(config, script_path=None):
         root_logger.addHandler(file_handler)
         enabled_levels.append(_get_log_level(file_config["level"]))
 
-    root_logger.setLevel(min(enabled_levels))
+    root_logger.setLevel(min(enabled_levels) if enabled_levels else logging.WARNING)
     return root_logger
