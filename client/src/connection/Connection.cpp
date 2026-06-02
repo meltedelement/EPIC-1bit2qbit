@@ -76,6 +76,7 @@ void Connection::connect(const std::string& pinned_fp) {
     connected_ = true;
     running_   = true;
     read_thread_ = std::thread{[this] { read_loop(); }};
+    ping_thread_ = std::thread{[this] { ping_loop(); }};
 }
 
 void Connection::disconnect() {
@@ -93,8 +94,10 @@ void Connection::disconnect() {
 
     if (read_thread_.joinable())
         read_thread_.join();
+    if (ping_thread_.joinable())
+        ping_thread_.join();
 
-    // Now the reader is gone — safe to tear down the SSL object. The socket is
+    // Now both reader and pinger are gone — safe to tear down the SSL object. The socket is
     // already closed, so this is an abrupt close (no close_notify); acceptable for
     // a client-initiated disconnect.
     if (ssl_) {
@@ -363,6 +366,24 @@ std::string Connection::ws_decode_frame() {
 // this, the window is microseconds, and the typical outcome is a dropped
 // connection. The full fix (single-threaded non-blocking I/O) is tracked
 // separately; until then this constraint is accepted deliberately.
+void Connection::ping_loop() {
+    while (running_) {
+        // Sleep 5s in 100ms chunks so disconnect() wakes us quickly via running_=false.
+        for (int i = 0; i < 50 && running_; ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (!running_) break;
+        try {
+            ws_send_frame(0x09, "");  // WebSocket ping — server must pong back
+        } catch (...) {
+            // Write failed: socket is silently dead (e.g. WiFi dropped with no RST).
+            // Close the socket so SSL_read in read_loop gets an error and fires on_disconnect.
+            boost::system::error_code ec;
+            tcp_sock_.close(ec);
+            break;
+        }
+    }
+}
+
 void Connection::read_loop() {
     while (running_) {
         try {

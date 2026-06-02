@@ -47,6 +47,7 @@ private:
     void tls_handshake(const std::string& pinned_fp);
     void ws_handshake();
     void read_loop();
+    void ping_loop();  // sends a WS ping every 5s; closes socket on write failure
 
     // Raw SSL I/O
     std::string ssl_read_exact(size_t n);
@@ -71,5 +72,6 @@ private:
     std::atomic<bool>                 connected_{false};
     std::atomic<bool>                 running_{false};
     std::thread                       read_thread_;
+    std::thread                       ping_thread_;
     std::mutex                        write_mutex_;
 };

@@ -37,6 +37,7 @@ private:
     void do_send(const std::string& recipient, const std::string& plaintext);
     void do_delete(uint64_t message_id, bool for_both_parties);
     void do_edit(uint64_t message_id, const std::string& new_plaintext);
+    void do_logout();
 
     // Inbound (called from the Connection read loop, on its own thread)
     void handle_ws_frame(const std::string& json_frame);

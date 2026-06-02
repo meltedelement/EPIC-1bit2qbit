@@ -158,6 +158,7 @@ void Client::run() {
     cbs.on_send     = [this](std::string r, std::string t) { do_send(r, t); };
     cbs.on_delete   = [this](uint64_t id, bool both) { do_delete(id, both); };
     cbs.on_edit     = [this](uint64_t id, std::string t) { do_edit(id, t); };
+    cbs.on_logout   = [this] { do_logout(); };
     app_ = std::make_unique<App>(std::move(cbs));
 
     // Spawn client/subprocess_handler.py with its stdin/stdout piped to us. The
@@ -270,6 +271,7 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
         connection_->on_message([this](std::string frame) { handle_ws_frame(frame); });
         connection_->on_disconnect([this](std::string reason) {
             epic_log("on_disconnect: " + reason);
+            app_->set_connected(false);
             app_->push_status("Disconnected: " + reason);
             if (quit_.load() || current_user_.empty()) return;
             bool expected = false;
@@ -290,6 +292,7 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
         send_login_frame(username, auth_password);
         publish_key_bundle();
 
+        app_->set_connected(true);
         app_->advance_to_chat(username);
         app_->push_status("Logged in as '" + username + "' — session open.");
     } catch (const std::exception& e) {
@@ -330,6 +333,34 @@ void Client::do_send(const std::string& recipient, const std::string& plaintext)
 void Client::do_delete(uint64_t /*message_id*/, bool /*for_both_parties*/) {}
 void Client::do_edit(uint64_t /*message_id*/, const std::string& /*new_plaintext*/) {}
 
+void Client::do_logout() {
+    epic_log("do_logout: begin");
+    // Clear credentials before disconnecting so on_disconnect won't start a reconnect.
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        current_user_.clear();
+        auth_password_.clear();
+        conversations_.clear();
+        pending_sends_.clear();
+        encrypted_dek_   = nlohmann::json{};
+        encrypted_state_ = nlohmann::json{};
+        store_.reset();
+        pin_fail_count_ = 0;
+    }
+
+    // Wake any sleeping reconnect loop and wait for it to exit.
+    reconnect_cv_.notify_all();
+    if (reconnect_thread_.joinable()) reconnect_thread_.join();
+
+    if (connection_) {
+        connection_->disconnect();
+        connection_.reset();
+    }
+
+    app_->return_to_login();
+    epic_log("do_logout: done");
+}
+
 // ── Reconnect ────────────────────────────────────────────────────────────────────
 
 void Client::reconnect_loop() {
@@ -355,6 +386,7 @@ void Client::reconnect_loop() {
             send_login_frame(current_user_, auth_password_);
             publish_key_bundle();
             reconnect_attempt_ = 0;
+            app_->set_connected(true);
             app_->push_status("Reconnected as '" + current_user_ + "'.");
             return;
         } catch (const std::exception& e) {
