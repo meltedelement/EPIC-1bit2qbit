@@ -212,7 +212,18 @@ void Client::do_register(const std::string& username, const std::string& auth_pa
         store_->save_dek(username, encrypted_dek_.dump());
         store_->save_encrypted_state(username, encrypted_state_.dump());
     } catch (const std::exception& e) {
-        app_->push_status(std::string("Registration failed: ") + e.what());
+        epic_log("do_register: exception: " + std::string(e.what()));
+        const std::string raw = e.what();
+        std::string msg;
+        if (raw.find("already taken") != std::string::npos)
+            msg = "Username already taken — choose a different one.";
+        else if (raw.find("HTTP") != std::string::npos)
+            msg = "Registration failed: server error. Try again later.";
+        else if (raw.find("SSL") != std::string::npos || raw.find("refused") != std::string::npos)
+            msg = "Could not reach server — check your network.";
+        else
+            msg = "Registration failed: " + raw;
+        app_->push_status(msg);
         return;
     }
 
@@ -283,7 +294,17 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
                 app_->return_to_login();
                 return;
             }
-            app_->push_status("Disconnected: " + reason);
+            if (reason.find("4002") != std::string::npos) {
+                {
+                    std::lock_guard<std::mutex> lk(mutex_);
+                    current_user_.clear();
+                    auth_password_.clear();
+                }
+                app_->push_status("Already logged in from another device.");
+                app_->return_to_login();
+                return;
+            }
+            app_->push_status("Connection lost.");
             if (quit_.load() || current_user_.empty()) return;
             bool expected = false;
             if (reconnect_active_.compare_exchange_strong(expected, true)) {
@@ -314,7 +335,19 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
         send_login_frame(username, auth_password);
     } catch (const std::exception& e) {
         epic_log("do_login: exception: " + std::string(e.what()));
-        app_->push_status(std::string("Login failed: ") + e.what());
+        const std::string raw = e.what();
+        std::string msg;
+        if (raw.find("pin mismatch") != std::string::npos)
+            msg = "Server certificate has changed — contact your administrator.";
+        else if (raw.find("certificate verify") != std::string::npos || raw.find("cert verify") != std::string::npos)
+            msg = "Could not verify server certificate.";
+        else if (raw.find("SSL") != std::string::npos)
+            msg = "Could not establish a secure connection.";
+        else if (raw.find("refused") != std::string::npos || raw.find("ws_handshake") != std::string::npos)
+            msg = "Could not reach server.";
+        else
+            msg = "Could not connect to server.";
+        app_->push_status(msg);
         connection_.reset();
     }
 }
@@ -343,7 +376,7 @@ void Client::do_send(const std::string& recipient, const std::string& plaintext)
         }
     } catch (const std::exception& e) {
         epic_log("do_send: exception: " + std::string(e.what()));
-        app_->push_status(std::string("Send failed: ") + e.what());
+        app_->push_status("Message could not be sent.");
     }
 }
 
@@ -414,7 +447,8 @@ void Client::do_forward(const std::string& recipient, const std::string& body) {
             connection_->send_text(frame.dump());
         }
     } catch (const std::exception& e) {
-        app_->push_status(std::string("Forward failed: ") + e.what());
+        epic_log("do_forward: exception: " + std::string(e.what()));
+        app_->push_status("Message could not be forwarded.");
     }
 }
 
@@ -569,10 +603,10 @@ void Client::handle_ws_frame(const std::string& json_frame) {
     } else if (type == "key_bundle_response") {
         on_key_bundle_response(frame);
     } else if (type == "error") {
-        app_->push_status("Server error [" + frame.value("code", std::string{}) + "]: " +
-                          frame.value("detail", std::string{}));
+        epic_log("handle_ws_frame: server error: code=" + frame.value("code", std::string{}) +
+                 " detail=" + frame.value("detail", std::string{}));
     } else {
-        app_->push_status("Unknown frame type from server: " + type);
+        epic_log("handle_ws_frame: unhandled type=" + type);
     }
 }
 
