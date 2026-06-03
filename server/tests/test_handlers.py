@@ -5,16 +5,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from backend.database.models import BlockchainMessageQueue, KeyBundle, OneTimePreKey, User
 from backend.routes.ws import router
-from backend.session import SessionRegistry
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
-from ws_helpers import _session_cm
+from ws_helpers import _session_cm, make_ws_app
 
-_app = FastAPI()
-_app.state.sessions = SessionRegistry()
-_app.include_router(router)
-_client = TestClient(_app)
+_app, _client = make_ws_app(router)
 
 # Patch target shortcuts
 _VERIFY = "backend.routes.ws.verify_credentials"

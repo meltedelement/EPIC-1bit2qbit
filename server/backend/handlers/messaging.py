@@ -29,12 +29,13 @@ def _validate_mid(mid: str, sender: str, recipient: str, now: datetime) -> Error
         return ErrorFrame(code="invalid_mid", detail="mid recipient does not match frame recipient")
 
     edit_window = timedelta(minutes=config.messaging.edit_window_minutes)
-    grace = timedelta(seconds=config.messaging.edit_grace_seconds)
-    if mid_ts < now - edit_window - grace:
+    edit_grace = timedelta(seconds=config.messaging.edit_grace_seconds)
+    clock_grace = timedelta(seconds=config.messaging.clock_skew_grace_seconds)
+    if mid_ts < now - edit_window - edit_grace:
         return ErrorFrame(
             code="edit_deadline_passed", detail="edit window has closed for this message"
         )
-    if mid_ts > now:
+    if mid_ts > now + clock_grace:
         return ErrorFrame(code="invalid_mid", detail="mid timestamp is in the future")
 
     return None
