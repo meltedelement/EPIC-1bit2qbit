@@ -249,6 +249,10 @@ void App::run() {
             push_status("Key PIN must be exactly 6 digits.");
             return;
         }
+        if (login_password_ == login_key_pin_) {
+            push_status("Password and Key PIN must be different.");
+            return;
+        }
         if (cbs_.on_register) {
             cbs_.on_register(login_username_, login_password_, login_key_pin_);
         } else {
