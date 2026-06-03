@@ -13,7 +13,7 @@ The project spans all four CS4455 minors: secure networking, modern C++, cryptog
 ## Contents
 
 - [Architecture at a glance](#architecture-at-a-glance)
-- [How the four minors are covered](#how-the-four-minors-are-covered)
+- [How the four majors are covered](#how-the-four-majors-are-covered)
 - [Repository layout](#repository-layout)
 - [Prerequisites](#prerequisites)
 - [Quick start](#quick-start)
