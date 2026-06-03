@@ -61,7 +61,7 @@ private:
     void           start_session_and_send(const std::string& peer, const nlohmann::json& bundle,
                                           const std::string& plaintext);
     void           send_chat_frame(const std::string& recipient, const nlohmann::json& dr_message,
-                                   const nlohmann::json* x3dh_header);
+                                   const nlohmann::json* x3dh_header, const std::string& mid);
     std::string new_mid(const std::string& recipient) const;
 
     // Encrypt/decrypt a string for local DB storage using the DEK.
