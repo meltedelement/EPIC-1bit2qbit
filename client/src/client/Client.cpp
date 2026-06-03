@@ -8,7 +8,13 @@
 #include <utility>
 
 #include <climits>
-#include <sys/stat.h>
+#include <filesystem>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 #include <openssl/err.h>
 #include <openssl/x509.h>
@@ -26,22 +32,33 @@
 
 namespace {
 
-std::string bin_dir() {
+std::filesystem::path bin_dir() {
+#ifdef _WIN32
+    char buf[MAX_PATH];
+    GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    return std::filesystem::path(buf).parent_path();
+#else
     char buf[PATH_MAX];
     ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    if (len <= 0) return ".";
+    if (len <= 0) return std::filesystem::current_path();
     buf[len] = '\0';
-    std::string path(buf);
-    auto slash = path.rfind('/');
-    return slash == std::string::npos ? "." : path.substr(0, slash);
+    return std::filesystem::path(buf).parent_path();
+#endif
 }
 
 std::string db_path_for(const std::string& username) {
+    std::filesystem::path base;
+#ifdef _WIN32
+    const char* appdata = std::getenv("LOCALAPPDATA");
+    base = appdata ? appdata : std::filesystem::temp_directory_path().string();
+#else
     const char* xdg = std::getenv("XDG_DATA_HOME");
-    std::string base = xdg ? xdg : (std::string(std::getenv("HOME")) + "/.local/share");
-    std::string dir  = base + "/epic";
-    mkdir(dir.c_str(), 0700);
-    return dir + "/" + username + ".db";
+    const char* home = std::getenv("HOME");
+    base = xdg ? xdg : (std::string(home ? home : ".") + "/.local/share");
+#endif
+    std::filesystem::path dir = base / "epic";
+    std::filesystem::create_directories(dir);
+    return (dir / (username + ".db")).string();
 }
 
 // ── One-shot HTTPS POST ───────────────────────────────────────────────────────
@@ -194,7 +211,7 @@ void Client::run() {
     cbs.on_logout   = [this] { do_logout(); };
     app_ = std::make_unique<App>(std::move(cbs));
 
-    crypto_->start(bin_dir() + "/../subprocess_handler.py");
+    crypto_->start((bin_dir() / ".." / "subprocess_handler.py").string());
 
     app_->run();  // blocking TUI loop; returns when the user quits
 
