@@ -199,9 +199,6 @@ void Client::run() {
     app_->run();  // blocking TUI loop; returns when the user quits
 
     quit_ = true;
-    reconnect_cv_.notify_all();
-    if (reconnect_thread_.joinable()) reconnect_thread_.join();
-
     if (connection_) connection_->disconnect();
     crypto_->stop();
 }
@@ -288,8 +285,6 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
         }
 
         current_user_  = username;
-        auth_password_ = auth_password;
-        reconnect_attempt_ = 0;
 
         // Bring up the network. Callbacks must be set BEFORE connect(): the read
         // thread starts inside connect() and may fire on_message immediately.
@@ -298,41 +293,26 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
         connection_->on_disconnect([this](std::string reason) {
             epic_log("on_disconnect: " + reason);
             app_->set_connected(false);
-            if (reason.find("4001") != std::string::npos) {
-                {
-                    std::lock_guard<std::mutex> lk(mutex_);
-                    current_user_.clear();
-                    auth_password_.clear();
-                    encrypted_dek_   = nlohmann::json{};
-                    encrypted_state_ = nlohmann::json{};
-                    store_.reset();
-                    pin_fail_count_ = 0;
-                }
-                app_->push_status("Incorrect password.");
-                app_->return_to_login();
-                return;
+            if (quit_.load()) return;
+            std::string msg;
+            if (reason.find("4001") != std::string::npos)
+                msg = "Incorrect password.";
+            else if (reason.find("4002") != std::string::npos)
+                msg = "Already logged in from another device.";
+            else
+                msg = "Connection lost — please log in again.";
+            {
+                std::lock_guard<std::mutex> lk(mutex_);
+                current_user_.clear();
+                conversations_.clear();
+                pending_sends_.clear();
+                encrypted_dek_   = nlohmann::json{};
+                encrypted_state_ = nlohmann::json{};
+                store_.reset();
+                pin_fail_count_ = 0;
             }
-            if (reason.find("4002") != std::string::npos) {
-                {
-                    std::lock_guard<std::mutex> lk(mutex_);
-                    current_user_.clear();
-                    auth_password_.clear();
-                }
-                app_->push_status("Already logged in from another device.");
-                app_->return_to_login();
-                return;
-            }
-            app_->push_status("Connection lost.");
-            if (quit_.load() || current_user_.empty()) return;
-            bool expected = false;
-            if (reconnect_active_.compare_exchange_strong(expected, true)) {
-                reconnect_attempt_ = 0;
-                if (reconnect_thread_.joinable()) reconnect_thread_.join();
-                reconnect_thread_ = std::thread([this] {
-                    reconnect_loop();
-                    reconnect_active_ = false;
-                });
-            }
+            app_->push_status(msg);
+            app_->return_to_login();
         });
 
         // Pin the server cert TOFU-style: prefer the fingerprint persisted from a
@@ -472,11 +452,10 @@ void Client::do_forward(const std::string& recipient, const std::string& body) {
 
 void Client::do_logout() {
     epic_log("do_logout: begin");
-    // Clear credentials before disconnecting so on_disconnect won't start a reconnect.
+    // Clear session state before disconnecting so on_disconnect won't try to return_to_login again.
     {
         std::lock_guard<std::mutex> lk(mutex_);
         current_user_.clear();
-        auth_password_.clear();
         conversations_.clear();
         pending_sends_.clear();
         encrypted_dek_   = nlohmann::json{};
@@ -486,12 +465,6 @@ void Client::do_logout() {
         pin_fail_count_ = 0;
     }
 
-    // Wake any sleeping reconnect loop and wait for it to exit.
-    reconnect_abort_ = true;
-    reconnect_cv_.notify_all();
-    if (reconnect_thread_.joinable()) reconnect_thread_.join();
-    reconnect_abort_ = false;
-
     if (connection_) {
         connection_->disconnect();
         connection_.reset();
@@ -499,41 +472,6 @@ void Client::do_logout() {
 
     app_->return_to_login();
     epic_log("do_logout: done");
-}
-
-// ── Reconnect ────────────────────────────────────────────────────────────────────
-
-void Client::reconnect_loop() {
-    while (!quit_.load()) {
-        int attempt  = reconnect_attempt_.load();
-        int delay_s  = std::min(1 << std::min(attempt, 5), 30);  // 1,2,4,8,16,30
-
-        epic_log("reconnect_loop: attempt=" + std::to_string(attempt)
-                 + " delay=" + std::to_string(delay_s) + "s");
-        app_->push_status("Reconnecting in " + std::to_string(delay_s) + "s "
-                          "(attempt " + std::to_string(attempt + 1) + ")...");
-
-        {
-            std::unique_lock<std::mutex> lk(reconnect_cv_mutex_);
-            reconnect_cv_.wait_for(lk, std::chrono::seconds(delay_s),
-                                   [this] { return quit_.load() || reconnect_abort_.load(); });
-        }
-        if (quit_.load() || reconnect_abort_.load()) break;
-
-        try {
-            app_->push_status("Reconnecting...");
-            connection_->connect(server_cert_pin_);
-            send_login_frame(current_user_, auth_password_);
-            publish_key_bundle();
-            reconnect_attempt_ = 0;
-            app_->set_connected(true);
-            app_->push_status("Reconnected as '" + current_user_ + "'.");
-            return;
-        } catch (const std::exception& e) {
-            epic_log("reconnect_loop: failed: " + std::string(e.what()));
-            reconnect_attempt_.fetch_add(1);
-        }
-    }
 }
 
 // ── Network helpers ──────────────────────────────────────────────────────────────

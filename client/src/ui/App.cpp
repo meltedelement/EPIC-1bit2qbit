@@ -159,10 +159,14 @@ void App::advance_to_chat(std::string username) {
     if (screen_ptr_) {
         screen_ptr_->Post([this, u = std::move(username)]() mutable {
             local_username_ = std::move(u);
+            login_password_.clear();
+            login_key_pin_.clear();
             active_screen_ = 1;
         });
     } else {
         local_username_ = std::move(username);
+        login_password_.clear();
+        login_key_pin_.clear();
         active_screen_ = 1;
     }
 }

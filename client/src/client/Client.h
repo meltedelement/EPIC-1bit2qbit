@@ -1,6 +1,5 @@
 #pragma once
 #include <atomic>
-#include <condition_variable>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -46,9 +45,6 @@ private:
     void on_deliver_message(const nlohmann::json& frame);
     void on_key_bundle_response(const nlohmann::json& frame);
 
-    // Reconnect
-    void reconnect_loop();
-
     // Network helpers
     void send_login_frame(const std::string& username, const std::string& password);
     void publish_key_bundle();
@@ -80,16 +76,9 @@ private:
     std::string                    host_;
     uint16_t                       port_;
     std::string                    current_user_;
-    std::string                    auth_password_;
     int                            pin_fail_count_{0};
 
     std::atomic<bool>              quit_{false};
-    std::atomic<bool>              reconnect_abort_{false};
-    std::atomic<int>               reconnect_attempt_{0};
-    std::atomic<bool>              reconnect_active_{false};
-    std::mutex                     reconnect_cv_mutex_;
-    std::condition_variable        reconnect_cv_;
-    std::thread                    reconnect_thread_;
 
     // The DEK is never held in C++ — the crypto subprocess keeps the raw key in
     // memory after create/unlock. We only retain the encrypted_dek blob
