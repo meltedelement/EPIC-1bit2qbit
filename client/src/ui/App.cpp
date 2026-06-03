@@ -496,7 +496,7 @@ void App::run() {
                 auto row = hbox({
                     text(sel ? " > " : "   "),
                     text(label) | (sent ? color(Color::Blue) : color(Color::White)),
-                    text(m.body) | flex,
+                    paragraph(m.body) | flex,
                     m.edited ? text(" (edited)") | dim : text(""),
                 });
                 if (sel) row = row | inverted;
