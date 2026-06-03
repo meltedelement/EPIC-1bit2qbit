@@ -525,7 +525,7 @@ void App::run() {
                 auto row = hbox({
                     text(sel ? " > " : "   "),
                     text(label) | (sent ? color(Color::Blue) : color(Color::White)),
-                    m.deleted ? (text("(deleted)") | dim | flex) : (text(m.body) | flex),
+                    m.deleted ? (text("(deleted)") | dim | flex) : (paragraph(m.body) | flex),
                     (!m.deleted && m.edited)              ? (text(" (edited)")    | dim) : text(""),
                     m.type == MessageType::Forward        ? (text(" (forwarded)") | dim) : text(""),
                 });
