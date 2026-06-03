@@ -84,6 +84,7 @@ private:
     int                            pin_fail_count_{0};
 
     std::atomic<bool>              quit_{false};
+    std::atomic<bool>              reconnect_abort_{false};
     std::atomic<int>               reconnect_attempt_{0};
     std::atomic<bool>              reconnect_active_{false};
     std::mutex                     reconnect_cv_mutex_;

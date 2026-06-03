@@ -469,8 +469,10 @@ void Client::do_logout() {
     }
 
     // Wake any sleeping reconnect loop and wait for it to exit.
+    reconnect_abort_ = true;
     reconnect_cv_.notify_all();
     if (reconnect_thread_.joinable()) reconnect_thread_.join();
+    reconnect_abort_ = false;
 
     if (connection_) {
         connection_->disconnect();
@@ -496,9 +498,9 @@ void Client::reconnect_loop() {
         {
             std::unique_lock<std::mutex> lk(reconnect_cv_mutex_);
             reconnect_cv_.wait_for(lk, std::chrono::seconds(delay_s),
-                                   [this] { return quit_.load(); });
+                                   [this] { return quit_.load() || reconnect_abort_.load(); });
         }
-        if (quit_.load()) break;
+        if (quit_.load() || reconnect_abort_.load()) break;
 
         try {
             app_->push_status("Reconnecting...");
