@@ -34,7 +34,7 @@ def _validate_mid(mid: str, sender: str, recipient: str, now: datetime) -> Error
         return ErrorFrame(
             code="edit_deadline_passed", detail="edit window has closed for this message"
         )
-    if mid_ts > now:
+    if mid_ts > now + grace:
         return ErrorFrame(code="invalid_mid", detail="mid timestamp is in the future")
 
     return None
