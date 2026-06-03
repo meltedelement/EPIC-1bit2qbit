@@ -83,12 +83,13 @@ void Connection::disconnect() {
     running_   = false;
     connected_ = false;
 
-    // Close the TCP socket first: read_thread_ may be blocked in SSL_read, and the
-    // SSL object is not safe for concurrent use. Closing the fd makes that SSL_read
-    // fail so read_loop exits; we then join before touching ssl_. Freeing the SSL
-    // before the reader has stopped would be a use-after-free / data race.
+    // Interrupt read_thread_ if it is blocked in SSL_read. shutdown(SHUT_RDWR) wakes
+    // any thread blocked in read() on the fd immediately (close() does not reliably
+    // do this on Linux). We then close to deallocate the fd.  SSL is not safe for
+    // concurrent use, so we must join before freeing ssl_.
     if (tcp_sock_.is_open()) {
         boost::system::error_code ec;
+        tcp_sock_.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
         tcp_sock_.close(ec);
     }
 
