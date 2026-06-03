@@ -64,6 +64,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         await websocket.close(code=4002, reason="already connected")
         return
 
+    await websocket.send_text(json.dumps({"username": username}))
     logger.info("session opened: user=%s", repr(username))
     ctx = WsContext(username=username, websocket=websocket, registry=registry)
 
