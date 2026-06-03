@@ -39,6 +39,7 @@ private:
     void do_forward(const std::string& recipient, const std::string& body);
     void do_delete(uint64_t message_id, bool for_both_parties);
     void do_edit(uint64_t message_id, const std::string& new_plaintext);
+    void do_logout();
 
     // Inbound (called from the Connection read loop, on its own thread)
     void handle_ws_frame(const std::string& json_frame);
@@ -91,19 +92,19 @@ private:
 
     // The DEK is never held in C++ — the crypto subprocess keeps the raw key in
     // memory after create/unlock. We only retain the encrypted_dek blob
-    // ({salt, nonce, ciphertext}) needed to unlock it again.
-    // TODO(persistence): this belongs in MessageStore / the local key store so it
-    // survives across runs; for now it lives only for the session.
+    // ({salt, nonce, ciphertext}) needed to unlock it again; it is persisted in
+    // MessageStore's key_store (save_dek/load_dek) and survives across runs.
     nlohmann::json                 encrypted_dek_;
 
     // DEK-wrapped X3DH state (own identity key, signed pre-key, one-time pre-keys).
     // Created at registration, published over WS after login, and consumed when
-    // establishing sessions. Opaque to C++. TODO(persistence): also session-only.
+    // establishing sessions. Opaque to C++. Persisted via MessageStore
+    // (save_encrypted_state/load_encrypted_state).
     nlohmann::json                 encrypted_state_;
 
     // Server TLS certificate fingerprint, pinned on first connect (TOFU). Empty
-    // until the first handshake. TODO(persistence): MessageStore has no server-cert
-    // slot yet, so this only pins for the lifetime of the process.
+    // until the first handshake, then persisted per-host in MessageStore
+    // (save_server_cert/load_server_cert) so the pin survives restarts.
     std::string                    server_cert_pin_;
 
     // mutex_ guards crypto_ access (the subprocess is single-threaded and the

@@ -325,3 +325,22 @@ std::optional<std::string> MessageStore::load_encrypted_state(const std::string&
         return reinterpret_cast<const char*>(sqlite3_column_text(stmt.s, 0));
     return std::nullopt;
 }
+
+void MessageStore::save_server_cert(const std::string& host, const std::string& fingerprint) {
+    auto stmt = prepare(db_,
+        "INSERT OR REPLACE INTO key_store (key, value) VALUES (?, ?)");
+    const std::string key = "cert:" + host;
+    sqlite3_bind_text(stmt.s, 1, key.c_str(),         -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.s, 2, fingerprint.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt.s);
+}
+
+std::optional<std::string> MessageStore::load_server_cert(const std::string& host) const {
+    auto stmt = prepare(db_,
+        "SELECT value FROM key_store WHERE key = ?");
+    const std::string key = "cert:" + host;
+    sqlite3_bind_text(stmt.s, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt.s) == SQLITE_ROW)
+        return reinterpret_cast<const char*>(sqlite3_column_text(stmt.s, 0));
+    return std::nullopt;
+}

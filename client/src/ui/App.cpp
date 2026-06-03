@@ -53,6 +53,12 @@ void App::start_lockout(int seconds) {
     });
 }
 
+void App::set_connected(bool connected) {
+    connected_ = connected;
+    if (screen_ptr_)
+        screen_ptr_->PostEvent(Event::Custom);
+}
+
 void App::push_status(std::string msg) {
     epic_log("push_status: " + msg);
     if (screen_ptr_) {
@@ -152,6 +158,30 @@ void App::set_conversations(std::vector<Conversation> convs) {
 void App::advance_to_chat(std::string username) {
     local_username_ = std::move(username);
     active_screen_ = 1;
+}
+
+void App::return_to_login() {
+    if (screen_ptr_) {
+        screen_ptr_->Post([this] {
+            conversations_.clear();
+            conv_names_.clear();
+            selected_conv_ = 0;
+            compose_text_.clear();
+            new_peer_.clear();
+            local_username_.clear();
+            status_msg_.clear();
+            active_screen_ = 0;
+        });
+    } else {
+        conversations_.clear();
+        conv_names_.clear();
+        selected_conv_ = 0;
+        compose_text_.clear();
+        new_peer_.clear();
+        local_username_.clear();
+        status_msg_.clear();
+        active_screen_ = 0;
+    }
 }
 
 void App::seed_placeholder_data() {
@@ -360,8 +390,14 @@ void App::run() {
 
     auto send_btn = Button("Send", do_send, ButtonOption::Ascii());
 
-    auto chat_right  = Container::Horizontal({compose_input, send_btn});
-    auto chat_layout = Container::Horizontal({left_panel, chat_right});
+    auto logout_btn = Button(" Logout ", [&] {
+        if (cbs_.on_logout) cbs_.on_logout();
+        else return_to_login();
+    }, ButtonOption::Ascii());
+
+    auto chat_right     = Container::Horizontal({compose_input, send_btn});
+    auto chat_panels    = Container::Horizontal({left_panel, chat_right});
+    auto chat_layout    = Container::Vertical({logout_btn, chat_panels});
 
     // Key navigation and options key-bindings for the whole chat area
     chat_layout = CatchEvent(chat_layout, [&](Event e) {
@@ -533,6 +569,16 @@ void App::run() {
             ? "No conversations"
             : conversations_[selected_conv_].peer();
 
+        Elements header_els = {
+            text("  EPIC") | bold | color(Color::Cyan),
+            text(" Secure Messenger") | color(Color::Cyan),
+        };
+        if (!connected_.load())
+            header_els.push_back(text(" ● NO CONNECTION") | color(Color::Red) | bold);
+        header_els.push_back(filler());
+        header_els.push_back(text(" " + local_username_ + " ") | bold);
+        header_els.push_back(logout_btn->Render());
+
         // ── Compose bar ───────────────────────────────────────────────────────
         std::string compose_label = editing_msg_     ? " Edit > "
                                   : forwarding_msg_  ? " Fwd to > "
@@ -545,12 +591,7 @@ void App::run() {
         });
 
         return vbox({
-            hbox({
-                text("  EPIC") | bold | color(Color::Cyan),
-                text(" Secure Messenger") | color(Color::Cyan),
-                filler(),
-                text(" " + local_username_ + " ") | bold,
-            }),
+            hbox(std::move(header_els)),
             separator(),
             hbox({
                 vbox({

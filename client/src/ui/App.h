@@ -10,12 +10,13 @@
 #include "messaging/Message.h"
 
 struct AppCallbacks {
-    std::function<void(std::string, std::string, std::string)> on_register;
-    std::function<void(std::string, std::string, std::string)> on_login;
-    std::function<void(std::string, std::string)> on_send;
-    std::function<void(uint64_t, bool)>           on_delete;   // (message_id, for_both)
-    std::function<void(uint64_t, std::string)>    on_edit;     // (message_id, new_plaintext)
-    std::function<void(std::string, std::string)> on_forward;  // (recipient, body)
+    std::function<void(std::string, std::string, std::string)> on_register;  // (username, auth_password, key_pin)
+    std::function<void(std::string, std::string, std::string)> on_login;     // (username, auth_password, key_pin)
+    std::function<void(std::string, std::string)> on_send;      // (recipient, plaintext)
+    std::function<void(uint64_t, bool)>           on_delete;    // (message_id, for_both)
+    std::function<void(uint64_t, std::string)>    on_edit;      // (message_id, new_plaintext)
+    std::function<void(std::string, std::string)> on_forward;   // (recipient, body)
+    std::function<void()>                         on_logout;
 };
 
 class App {
@@ -40,6 +41,12 @@ public:
     void set_conversations(std::vector<Conversation> convs);
     void advance_to_chat(std::string username);
 
+    // Called by Client whenever the WebSocket connection state changes.
+    void set_connected(bool connected);
+
+    // Return to the login screen after a logout.
+    void return_to_login();
+
 private:
     void seed_placeholder_data();
 
@@ -54,6 +61,7 @@ private:
     std::string login_key_pin_;
 
     ftxui::ScreenInteractive* screen_ptr_{nullptr};
+    std::atomic<bool>         connected_{false};
 
     std::atomic<bool>         lockout_active_{false};
     std::atomic<int>          lockout_remaining_{0};

@@ -41,6 +41,10 @@ public:
     void save_encrypted_state(const std::string& username, const std::string& state_json);
     std::optional<std::string> load_encrypted_state(const std::string& username) const;
 
+    // ── TOFU server-cert pin ───────────────────────────────────────────────────
+    void save_server_cert(const std::string& host, const std::string& fingerprint);
+    std::optional<std::string> load_server_cert(const std::string& host) const;
+
 private:
     std::string db_path_;
     sqlite3*    db_{nullptr};
