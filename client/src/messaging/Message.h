@@ -67,7 +67,9 @@ struct Message {
     MessageType             type{MessageType::Standard};
     std::string             body;
     bool                    edited{false};
+    bool                    deleted{false};
     std::optional<uint64_t> target_id;
+    std::string             target_mid;      // mid of the message this Edit/Delete targets
     std::string             wire_ciphertext; // raw network envelope JSON (for verify)
     std::string             mid;             // blockchain message ID (sender:recipient:ts)
 };

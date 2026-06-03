@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include "messaging/Conversation.h"
+#include "messaging/Message.h"
 
 
 class Connection;
@@ -35,6 +36,7 @@ private:
     void do_login(const std::string& username, const std::string& auth_password,
                   const std::string& key_pin);
     void do_send(const std::string& recipient, const std::string& plaintext);
+    void do_forward(const std::string& recipient, const std::string& body);
     void do_delete(uint64_t message_id, bool for_both_parties);
     void do_edit(uint64_t message_id, const std::string& new_plaintext);
 
@@ -57,6 +59,10 @@ private:
     // Crypto/session helpers. All assume mutex_ is held by the caller, since they
     // touch crypto_ (not thread-safe) and the conversation/state maps.
     void           encrypt_and_send(Conversation& conv, const std::string& plaintext);
+    void           encrypt_and_send_typed(Conversation& conv, const std::string& plaintext,
+                                          MessageType type);
+    // Encrypt and send a pre-serialised content blob — no DB/UI side-effects.
+    void           send_ratchet_control(Conversation& conv, const std::string& content_b64);
     void           start_session_and_send(const std::string& peer, const nlohmann::json& bundle,
                                           const std::string& plaintext);
     void           send_chat_frame(const std::string& recipient, const nlohmann::json& dr_message,

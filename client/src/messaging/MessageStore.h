@@ -19,7 +19,10 @@ public:
     // ── Messages ───────────────────────────────────────────────────────────────
     uint64_t save_message(const Message& msg);   // returns DB-assigned rowid
     void     delete_message(uint64_t id);
-    void     update_message_body(uint64_t id, const std::string& encrypted_body);
+    void     update_message_body(uint64_t id,         const std::string& encrypted_body);
+    void     update_message_body_by_mid(const std::string& mid, const std::string& encrypted_body);
+    void     mark_message_deleted(uint64_t id);
+    void     mark_message_deleted_by_mid(const std::string& mid);
     std::optional<Conversation> load_conversation(const std::string& peer) const;
     std::vector<std::string>    list_peers() const;
 

@@ -29,7 +29,9 @@ public:
 
     // Called by Client when a message body is edited locally.
     void update_message_body(uint64_t id, const std::string& new_body);
-    // Called by Client when a message is deleted locally.
+    void update_message_body_by_mid(const std::string& mid, const std::string& new_body);
+    void mark_message_deleted(uint64_t id);
+    void mark_message_deleted_by_mid(const std::string& mid);
     void remove_message(uint64_t id);
 
     // Called by Client on a wrong-PIN attempt.

@@ -123,20 +123,30 @@ std::string b64_decode(const std::string& in) {
     return out;
 }
 
-// The ratchet encrypts a serialized MessageContent, not the raw text — keeping the
-// envelope ready for edit/delete/reply types later. For now only the Standard body
-// travels; the field set matches messaging/Message.h.
-std::string content_to_message(const std::string& plaintext) {
-    const nlohmann::json content = {
-        {"type", static_cast<int>(MessageType::Standard)},
+std::string content_to_message(const std::string& plaintext,
+                               MessageType type = MessageType::Standard,
+                               const std::string& target_mid = "") {
+    nlohmann::json content = {
+        {"type", static_cast<int>(type)},
         {"body", plaintext},
     };
+    if (!target_mid.empty()) content["target_mid"] = target_mid;
     return b64_encode(content.dump());
 }
 
-std::string message_to_body(const std::string& plaintext_b64) {
-    const nlohmann::json content = nlohmann::json::parse(b64_decode(plaintext_b64));
-    return content.value("body", std::string{});
+struct ParsedContent {
+    MessageType type{MessageType::Standard};
+    std::string body;
+    std::string target_mid;
+};
+
+ParsedContent message_to_content(const std::string& plaintext_b64) {
+    const nlohmann::json j = nlohmann::json::parse(b64_decode(plaintext_b64));
+    ParsedContent c;
+    c.type       = static_cast<MessageType>(j.value("type", 0));
+    c.body       = j.value("body", std::string{});
+    c.target_mid = j.value("target_mid", std::string{});
+    return c;
 }
 
 }  // namespace
@@ -158,7 +168,7 @@ void Client::run() {
     cbs.on_send     = [this](std::string r, std::string t) { do_send(r, t); };
     cbs.on_delete   = [this](uint64_t id, bool both) { do_delete(id, both); };
     cbs.on_edit     = [this](uint64_t id, std::string t) { do_edit(id, t); };
-    cbs.on_forward  = [this](std::string r, std::string t) { do_send(r, t); };
+    cbs.on_forward  = [this](std::string r, std::string t) { do_forward(r, t); };
     app_ = std::make_unique<App>(std::move(cbs));
 
     // Spawn client/subprocess_handler.py with its stdin/stdout piped to us. The
@@ -341,19 +351,72 @@ void Client::do_send(const std::string& recipient, const std::string& plaintext)
 void Client::do_delete(uint64_t message_id, bool /*for_both_parties*/) {
     if (!store_) return;
     std::lock_guard<std::mutex> lk(mutex_);
-    store_->delete_message(message_id);
+    // Find which conversation owns this message and get its mid
+    std::string target_mid;
+    std::string target_peer;
+    for (auto& [peer, conv] : conversations_) {
+        target_mid = conv.get_message_mid(message_id);
+        if (!target_mid.empty()) { target_peer = peer; break; }
+    }
+    // Mark deleted locally
+    store_->mark_message_deleted(message_id);
     for (auto& [peer, conv] : conversations_)
-        conv.remove_message(message_id);
-    app_->remove_message(message_id);
+        conv.mark_message_deleted(message_id);
+    app_->mark_message_deleted(message_id);
+    // Propagate to the other party if we have a session and a mid to reference
+    if (!target_mid.empty() && !target_peer.empty()) {
+        auto it = conversations_.find(target_peer);
+        if (it != conversations_.end() && !it->second.ratchet_state().empty())
+            send_ratchet_control(it->second,
+                content_to_message("", MessageType::Delete, target_mid));
+    }
 }
 
 void Client::do_edit(uint64_t message_id, const std::string& new_plaintext) {
     if (!store_) return;
     std::lock_guard<std::mutex> lk(mutex_);
+    // Find the message's mid and peer
+    std::string target_mid;
+    std::string target_peer;
+    for (auto& [peer, conv] : conversations_) {
+        target_mid = conv.get_message_mid(message_id);
+        if (!target_mid.empty()) { target_peer = peer; break; }
+    }
+    // Update locally
     store_->update_message_body(message_id, storage_encrypt(new_plaintext));
     for (auto& [peer, conv] : conversations_)
         conv.update_message_body(message_id, new_plaintext);
     app_->update_message_body(message_id, new_plaintext);
+    // Propagate to the other party
+    if (!target_mid.empty() && !target_peer.empty()) {
+        auto it = conversations_.find(target_peer);
+        if (it != conversations_.end() && !it->second.ratchet_state().empty())
+            send_ratchet_control(it->second,
+                content_to_message(new_plaintext, MessageType::Edit, target_mid));
+    }
+}
+
+void Client::do_forward(const std::string& recipient, const std::string& body) {
+    if (!connection_ || !connection_->is_connected()) {
+        app_->push_status("Not connected — log in first.");
+        return;
+    }
+    try {
+        std::lock_guard<std::mutex> lk(mutex_);
+        auto it = conversations_.find(recipient);
+        if (it != conversations_.end() && !it->second.ratchet_state().empty()) {
+            encrypt_and_send_typed(it->second, body, MessageType::Forward);
+        } else {
+            pending_sends_[recipient].push_back(body);
+            const nlohmann::json frame = {
+                {"type", "request_key_bundle"},
+                {"target_username", recipient},
+            };
+            connection_->send_text(frame.dump());
+        }
+    } catch (const std::exception& e) {
+        app_->push_status(std::string("Forward failed: ") + e.what());
+    }
 }
 
 // ── Reconnect ────────────────────────────────────────────────────────────────────
@@ -506,20 +569,40 @@ void Client::on_deliver_message(const nlohmann::json& frame) {
             return;
         }
 
-        const std::string body            = message_to_body(plaintext_b64);
-        const std::string wire_ciphertext = frame.value("ciphertext", std::string{});
-        epic_log("on_deliver_message: decrypted body=" + body);
+        const ParsedContent   content       = message_to_content(plaintext_b64);
+        const std::string     wire_ct       = frame.value("ciphertext", std::string{});
+        const std::string     msg_mid       = frame.value("mid", std::string{});
+        epic_log("on_deliver_message: type=" + std::to_string(static_cast<int>(content.type))
+                 + " body=" + content.body.substr(0, 60));
+
+        if (content.type == MessageType::Edit) {
+            // Remote party edited a message — update it on our side
+            store_->update_message_body_by_mid(content.target_mid, storage_encrypt(content.body));
+            conv.update_message_body_by_mid(content.target_mid, content.body);
+            app_->update_message_body_by_mid(content.target_mid, content.body);
+            return;
+        }
+        if (content.type == MessageType::Delete) {
+            // Remote party deleted a message — mark it on our side
+            store_->mark_message_deleted_by_mid(content.target_mid);
+            conv.mark_message_deleted_by_mid(content.target_mid);
+            app_->mark_message_deleted_by_mid(content.target_mid);
+            return;
+        }
+
+        // Standard or Forward — add as a new message
         Message msg;
         msg.peer             = sender;
         msg.sender           = sender;
         msg.recipient        = current_user_;
+        msg.type             = content.type;
         msg.timestamp_ms     = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
-        msg.body             = body;
-        msg.wire_ciphertext  = wire_ciphertext;
-        msg.mid              = frame.value("mid", std::string{});
+        msg.body             = content.body;
+        msg.wire_ciphertext  = wire_ct;
+        msg.mid              = msg_mid;
         Message store_msg    = msg;
-        store_msg.body       = storage_encrypt(body);
+        store_msg.body       = storage_encrypt(content.body);
         msg.id               = store_->save_message(store_msg);
         conv.add_message(msg);
         epic_log("on_deliver_message: calling push_message");
@@ -588,6 +671,45 @@ void Client::encrypt_and_send(Conversation& conv, const std::string& plaintext) 
     conv.add_message(sent_msg);
     epic_log("encrypt_and_send: frame sent, pushing to UI");
     app_->push_sent_message(sent_msg);
+}
+
+void Client::encrypt_and_send_typed(Conversation& conv, const std::string& plaintext,
+                                    MessageType type) {
+    epic_log("encrypt_and_send_typed: peer=" + conv.peer()
+             + " type=" + std::to_string(static_cast<int>(type)));
+    nlohmann::json rstate    = nlohmann::json::parse(conv.ratchet_state());
+    const nlohmann::json enc = crypto_->encrypt_message(
+        rstate, content_to_message(plaintext, type), conv.associated_data());
+    conv.set_ratchet_state(enc.at("ratchet_state").dump());
+    store_->save_ratchet_state(conv.peer(), storage_encrypt(conv.ratchet_state()));
+    nlohmann::json env;
+    env["dr"]   = enc.at("encrypted_message");
+    env["x3dh"] = nullptr;
+    const std::string wire_ct = env.dump();
+    const std::string msg_mid = new_mid(conv.peer());
+    send_chat_frame(conv.peer(), enc.at("encrypted_message"), nullptr, msg_mid);
+    Message sent_msg;
+    sent_msg.peer            = conv.peer();
+    sent_msg.sender          = current_user_;
+    sent_msg.recipient       = conv.peer();
+    sent_msg.type            = type;
+    sent_msg.timestamp_ms    = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    sent_msg.wire_ciphertext = wire_ct;
+    sent_msg.mid             = msg_mid;
+    sent_msg.body            = storage_encrypt(plaintext);
+    sent_msg.id              = store_->save_message(sent_msg);
+    sent_msg.body            = plaintext;
+    conv.add_message(sent_msg);
+    app_->push_sent_message(sent_msg);
+}
+
+void Client::send_ratchet_control(Conversation& conv, const std::string& content_b64) {
+    nlohmann::json rstate    = nlohmann::json::parse(conv.ratchet_state());
+    const nlohmann::json enc = crypto_->encrypt_message(rstate, content_b64, conv.associated_data());
+    conv.set_ratchet_state(enc.at("ratchet_state").dump());
+    store_->save_ratchet_state(conv.peer(), storage_encrypt(conv.ratchet_state()));
+    send_chat_frame(conv.peer(), enc.at("encrypted_message"), nullptr, new_mid(conv.peer()));
 }
 
 void Client::start_session_and_send(const std::string& peer, const nlohmann::json& bundle,

@@ -9,7 +9,11 @@ public:
 
     void add_message(Message msg);
     void update_message_body(uint64_t id, const std::string& new_body);
+    void update_message_body_by_mid(const std::string& mid, const std::string& new_body);
+    void mark_message_deleted(uint64_t id);
+    void mark_message_deleted_by_mid(const std::string& mid);
     void remove_message(uint64_t id);
+    std::string get_message_mid(uint64_t id) const;
 
     const std::vector<Message>& messages()        const;
     const std::string&          peer()            const;

@@ -13,11 +13,35 @@ void Conversation::update_message_body(uint64_t id, const std::string& new_body)
     }
 }
 
+void Conversation::update_message_body_by_mid(const std::string& mid, const std::string& new_body) {
+    for (auto& m : messages_) {
+        if (m.mid == mid) { m.body = new_body; m.edited = true; return; }
+    }
+}
+
+void Conversation::mark_message_deleted(uint64_t id) {
+    for (auto& m : messages_) {
+        if (m.id == id) { m.deleted = true; m.body.clear(); return; }
+    }
+}
+
+void Conversation::mark_message_deleted_by_mid(const std::string& mid) {
+    for (auto& m : messages_) {
+        if (m.mid == mid) { m.deleted = true; m.body.clear(); return; }
+    }
+}
+
 void Conversation::remove_message(uint64_t id) {
     messages_.erase(
         std::remove_if(messages_.begin(), messages_.end(),
                        [id](const Message& m) { return m.id == id; }),
         messages_.end());
+}
+
+std::string Conversation::get_message_mid(uint64_t id) const {
+    for (const auto& m : messages_)
+        if (m.id == id) return m.mid;
+    return {};
 }
 
 const std::vector<Message>& Conversation::messages()      const { return messages_; }

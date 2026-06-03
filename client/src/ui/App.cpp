@@ -101,6 +101,35 @@ void App::update_message_body(uint64_t id, const std::string& new_body) {
     else             update();
 }
 
+void App::update_message_body_by_mid(const std::string& mid, const std::string& new_body) {
+    auto update = [this, mid, new_body] {
+        for (auto& conv : conversations_)
+            conv.update_message_body_by_mid(mid, new_body);
+    };
+    if (screen_ptr_) screen_ptr_->Post(update);
+    else             update();
+}
+
+void App::mark_message_deleted(uint64_t id) {
+    auto update = [this, id] {
+        for (auto& conv : conversations_)
+            conv.mark_message_deleted(id);
+        selected_msg_     = -1;
+        msg_options_open_ = false;
+    };
+    if (screen_ptr_) screen_ptr_->Post(update);
+    else             update();
+}
+
+void App::mark_message_deleted_by_mid(const std::string& mid) {
+    auto update = [this, mid] {
+        for (auto& conv : conversations_)
+            conv.mark_message_deleted_by_mid(mid);
+    };
+    if (screen_ptr_) screen_ptr_->Post(update);
+    else             update();
+}
+
 void App::remove_message(uint64_t id) {
     auto update = [this, id] {
         for (auto& conv : conversations_)
@@ -460,8 +489,9 @@ void App::run() {
                 auto row = hbox({
                     text(sel ? " > " : "   "),
                     text(label) | (sent ? color(Color::Blue) : color(Color::White)),
-                    text(m.body) | flex,
-                    m.edited ? text(" (edited)") | dim : text(""),
+                    m.deleted ? (text("(deleted)") | dim | flex) : (text(m.body) | flex),
+                    (!m.deleted && m.edited)              ? (text(" (edited)")    | dim) : text(""),
+                    m.type == MessageType::Forward        ? (text(" (forwarded)") | dim) : text(""),
                 });
                 if (sel) row = row | inverted;
                 msg_els.push_back(row);
