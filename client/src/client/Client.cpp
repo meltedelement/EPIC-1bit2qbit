@@ -8,16 +8,7 @@
 #include <utility>
 
 #include <climits>
-#include <filesystem>
-
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
+#include <sys/stat.h>
 
 #include <openssl/err.h>
 #include <openssl/x509.h>
@@ -35,33 +26,22 @@
 
 namespace {
 
-std::filesystem::path bin_dir() {
-#ifdef _WIN32
-    char buf[MAX_PATH];
-    GetModuleFileNameA(nullptr, buf, MAX_PATH);
-    return std::filesystem::path(buf).parent_path();
-#else
+std::string bin_dir() {
     char buf[PATH_MAX];
     ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    if (len <= 0) return std::filesystem::current_path();
+    if (len <= 0) return ".";
     buf[len] = '\0';
-    return std::filesystem::path(buf).parent_path();
-#endif
+    std::string path(buf);
+    auto slash = path.rfind('/');
+    return slash == std::string::npos ? "." : path.substr(0, slash);
 }
 
 std::string db_path_for(const std::string& username) {
-    std::filesystem::path base;
-#ifdef _WIN32
-    const char* appdata = std::getenv("LOCALAPPDATA");
-    base = appdata ? appdata : std::filesystem::temp_directory_path().string();
-#else
     const char* xdg = std::getenv("XDG_DATA_HOME");
-    const char* home = std::getenv("HOME");
-    base = xdg ? xdg : (std::string(home ? home : ".") + "/.local/share");
-#endif
-    std::filesystem::path dir = base / "epic";
-    std::filesystem::create_directories(dir);
-    return (dir / (username + ".db")).string();
+    std::string base = xdg ? xdg : (std::string(std::getenv("HOME")) + "/.local/share");
+    std::string dir  = base + "/epic";
+    mkdir(dir.c_str(), 0700);
+    return dir + "/" + username + ".db";
 }
 
 // ── One-shot HTTPS POST ───────────────────────────────────────────────────────

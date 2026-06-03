@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import time
 
 import colorlog
@@ -92,4 +93,26 @@ def setup_logging(config, script_path=None):
         enabled_levels.append(_get_log_level(file_config["level"]))
 
     root_logger.setLevel(min(enabled_levels) if enabled_levels else logging.WARNING)
+
+    # Suppress raw WebSocket frame content (e.g. "< TEXT '{"password":...}'") from
+    # websockets sub-loggers and uvicorn.error. Attached to each handler so it covers
+    # all sub-loggers (websockets.frames, websockets.protocol, etc.) without
+    # accumulating duplicate filters across repeated setup_logging() calls.
+    _frame_re = re.compile(r"^[<>] (?:TEXT|BINARY|PING|PONG|CONT) ")
+    _ws_prefixes = ("websockets", "uvicorn.error")
+
+    class _SuppressWsFrames(logging.Filter):
+        def filter(self, record):
+            if record.name.startswith(_ws_prefixes):
+                return not _frame_re.match(record.getMessage())
+            return True
+
+    for _handler in root_logger.handlers:
+        _handler.addFilter(_SuppressWsFrames())
+
+    # web3 and urllib3 log every RPC call and HTTP connection at DEBUG.
+    # The batcher already emits INFO-level summaries, so suppress the noise.
+    for _lib in ("web3", "urllib3"):
+        logging.getLogger(_lib).setLevel(logging.WARNING)
+
     return root_logger
