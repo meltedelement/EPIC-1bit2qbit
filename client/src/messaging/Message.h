@@ -60,8 +60,9 @@ struct MessageEnvelope {
 // Direction is derived at render time: recipient == local username → received, else sent.
 struct Message {
     uint64_t                id{0};
-    std::string             peer;            // the other party in the conversation
-    std::string             recipient;       // from envelope
+    std::string             peer;            // the other party in the conversation (grouping key)
+    std::string             sender;          // who sent this message
+    std::string             recipient;       // who received this message
     int64_t                 timestamp_ms{0};
     MessageType             type{MessageType::Standard};
     std::string             body;

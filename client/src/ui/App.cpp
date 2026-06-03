@@ -450,8 +450,10 @@ void App::run() {
             const auto& msgs = conversations_[selected_conv_].messages();
             for (int i = 0; i < static_cast<int>(msgs.size()); ++i) {
                 const auto& m = msgs[i];
-                bool sent     = (m.recipient != local_username_);
-                bool sel      = (i == selected_msg_);
+                // Use sender if set; fall back to recipient-based logic for old rows
+                bool sent = m.sender.empty() ? (m.recipient != local_username_)
+                                             : (m.sender == local_username_);
+                bool sel  = (i == selected_msg_);
                 std::string label = sent
                     ? "[" + format_time(m.timestamp_ms) + "] you : "
                     : "[" + format_time(m.timestamp_ms) + "] " + m.peer + " : ";

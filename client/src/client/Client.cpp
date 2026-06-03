@@ -511,6 +511,7 @@ void Client::on_deliver_message(const nlohmann::json& frame) {
         epic_log("on_deliver_message: decrypted body=" + body);
         Message msg;
         msg.peer             = sender;
+        msg.sender           = sender;
         msg.recipient        = current_user_;
         msg.timestamp_ms     = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
@@ -575,6 +576,7 @@ void Client::encrypt_and_send(Conversation& conv, const std::string& plaintext) 
     send_chat_frame(conv.peer(), enc.at("encrypted_message"), nullptr, msg_mid);
     Message sent_msg;
     sent_msg.peer            = conv.peer();
+    sent_msg.sender          = current_user_;
     sent_msg.recipient       = conv.peer();
     sent_msg.timestamp_ms    = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
@@ -635,6 +637,7 @@ void Client::start_session_and_send(const std::string& peer, const nlohmann::jso
     send_chat_frame(peer, enc.at("encrypted_message"), &header, msg_mid_init);
     Message sent_msg;
     sent_msg.peer            = peer;
+    sent_msg.sender          = current_user_;
     sent_msg.recipient       = peer;
     sent_msg.timestamp_ms    = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
