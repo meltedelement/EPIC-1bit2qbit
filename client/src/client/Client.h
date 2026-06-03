@@ -1,14 +1,17 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 
 #include "messaging/Conversation.h"
+#include "messaging/Message.h"
 
 
 class Connection;
@@ -27,11 +30,21 @@ public:
 
 private:
     // Outbound actions (called from UI)
-    void do_register(const std::string& username, const std::string& password);
-    void do_login(const std::string& username, const std::string& password);
+    void do_register(const std::string& username, const std::string& auth_password,
+                     const std::string& key_pin);
+    void do_login(const std::string& username, const std::string& auth_password,
+                  const std::string& key_pin);
     void do_send(const std::string& recipient, const std::string& plaintext);
+    void do_forward(const std::string& recipient, const std::string& body);
     void do_delete(uint64_t message_id, bool for_both_parties);
     void do_edit(uint64_t message_id, const std::string& new_plaintext);
+    void do_logout();
+
+    // Tears down a session that the server authenticated but whose local PIN unlock
+    // failed (or had no key material). Must run OFF the Connection read thread —
+    // disconnect() joins it — so callers marshal it via App::run_on_ui. Deliberately
+    // leaves pin_fail_count_ untouched so the lockout counter survives the teardown.
+    void abort_login_session();
 
     // Inbound (called from the Connection read loop, on its own thread)
     void handle_ws_frame(const std::string& json_frame);
@@ -49,31 +62,51 @@ private:
     // Crypto/session helpers. All assume mutex_ is held by the caller, since they
     // touch crypto_ (not thread-safe) and the conversation/state maps.
     void           encrypt_and_send(Conversation& conv, const std::string& plaintext);
+    void           encrypt_and_send_typed(Conversation& conv, const std::string& plaintext,
+                                          MessageType type);
+    // Encrypt and send a pre-serialised content blob — no DB/UI side-effects.
+    void           send_ratchet_control(Conversation& conv, const std::string& content_b64);
     void           start_session_and_send(const std::string& peer, const nlohmann::json& bundle,
                                           const std::string& plaintext);
     void           send_chat_frame(const std::string& recipient, const nlohmann::json& dr_message,
-                                   const nlohmann::json* x3dh_header);
-    static std::string new_mid();
+                                   const nlohmann::json* x3dh_header, const std::string& mid);
+    std::string new_mid(const std::string& recipient) const;
+
+    // Encrypt/decrypt a string for local DB storage using the DEK.
+    // Must be called with mutex_ held (uses crypto_).
+    // decrypt_from_storage gracefully returns the input unchanged if it is not
+    // an encrypted blob, so existing plaintext rows survive a DB migration.
+    std::string storage_encrypt(const std::string& plaintext);
+    std::string storage_decrypt(const std::string& data);
 
     std::string                    host_;
     uint16_t                       port_;
     std::string                    current_user_;
+    int                            pin_fail_count_{0};
+
+    // The Key PIN, held only between submitting the login frame and the server's
+    // auth confirmation, at which point it is used to unlock the DEK and cleared.
+    // Validating the password (server-side) before the PIN is what prevents a local
+    // "wrong PIN" oracle / account enumeration.
+    std::string                    pending_key_pin_;
+
+    std::atomic<bool>              quit_{false};
 
     // The DEK is never held in C++ — the crypto subprocess keeps the raw key in
     // memory after create/unlock. We only retain the encrypted_dek blob
-    // ({salt, nonce, ciphertext}) needed to unlock it again.
-    // TODO(persistence): this belongs in MessageStore / the local key store so it
-    // survives across runs; for now it lives only for the session.
+    // ({salt, nonce, ciphertext}) needed to unlock it again; it is persisted in
+    // MessageStore's key_store (save_dek/load_dek) and survives across runs.
     nlohmann::json                 encrypted_dek_;
 
     // DEK-wrapped X3DH state (own identity key, signed pre-key, one-time pre-keys).
     // Created at registration, published over WS after login, and consumed when
-    // establishing sessions. Opaque to C++. TODO(persistence): also session-only.
+    // establishing sessions. Opaque to C++. Persisted via MessageStore
+    // (save_encrypted_state/load_encrypted_state).
     nlohmann::json                 encrypted_state_;
 
     // Server TLS certificate fingerprint, pinned on first connect (TOFU). Empty
-    // until the first handshake. TODO(persistence): MessageStore has no server-cert
-    // slot yet, so this only pins for the lifetime of the process.
+    // until the first handshake, then persisted per-host in MessageStore
+    // (save_server_cert/load_server_cert) so the pin survives restarts.
     std::string                    server_cert_pin_;
 
     // mutex_ guards crypto_ access (the subprocess is single-threaded and the

@@ -53,3 +53,4 @@ class ErrorFrame(BaseModel):
     type: Literal["error"] = "error"
     code: str
     detail: str
+    target: str | None = None  # set when the error concerns a specific username

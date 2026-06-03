@@ -58,8 +58,8 @@ std::string ws_header_value(const std::string& response, const std::string& name
 
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
-Connection::Connection(const std::string& host, uint16_t port, const std::string& path)
-    : host_{host}, port_{port}, path_{path}, tcp_sock_{io_ctx_} {}
+Connection::Connection(const std::string& host, uint16_t port, bool tls)
+    : host_{host}, port_{port}, tls_{tls}, tcp_sock_{io_ctx_} {}
 
 Connection::~Connection() { disconnect(); }
 
@@ -71,30 +71,34 @@ void Connection::connect(const std::string& pinned_fp) {
     disconnect();
 
     tcp_connect();
-    tls_handshake(pinned_fp);
+    if (tls_) tls_handshake(pinned_fp);
     ws_handshake();
     connected_ = true;
     running_   = true;
     read_thread_ = std::thread{[this] { read_loop(); }};
+    ping_thread_ = std::thread{[this] { ping_loop(); }};
 }
 
 void Connection::disconnect() {
     running_   = false;
     connected_ = false;
 
-    // Close the TCP socket first: read_thread_ may be blocked in SSL_read, and the
-    // SSL object is not safe for concurrent use. Closing the fd makes that SSL_read
-    // fail so read_loop exits; we then join before touching ssl_. Freeing the SSL
-    // before the reader has stopped would be a use-after-free / data race.
+    // Interrupt read_thread_ if it is blocked in SSL_read. shutdown(SHUT_RDWR) wakes
+    // any thread blocked in read() on the fd immediately (close() does not reliably
+    // do this on Linux). We then close to deallocate the fd.  SSL is not safe for
+    // concurrent use, so we must join before freeing ssl_.
     if (tcp_sock_.is_open()) {
         boost::system::error_code ec;
+        tcp_sock_.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
         tcp_sock_.close(ec);
     }
 
     if (read_thread_.joinable())
         read_thread_.join();
+    if (ping_thread_.joinable())
+        ping_thread_.join();
 
-    // Now the reader is gone — safe to tear down the SSL object. The socket is
+    // Now both reader and pinger are gone — safe to tear down the SSL object. The socket is
     // already closed, so this is an abrupt close (no close_notify); acceptable for
     // a client-initiated disconnect.
     if (ssl_) {
@@ -161,28 +165,40 @@ void Connection::tls_handshake(const std::string& pinned_fp) {
 
 std::string Connection::ssl_read_exact(size_t n) {
     std::string buf(n, '\0');
-    size_t total = 0;
-    while (total < n) {
-        int got = SSL_read(ssl_, buf.data() + total, static_cast<int>(n - total));
-        if (got <= 0) {
-            int err = SSL_get_error(ssl_, got);
-            throw std::runtime_error{"SSL_read failed: error code " + std::to_string(err)};
+    if (tls_) {
+        size_t total = 0;
+        while (total < n) {
+            int got = SSL_read(ssl_, buf.data() + total, static_cast<int>(n - total));
+            if (got <= 0) {
+                int err = SSL_get_error(ssl_, got);
+                throw std::runtime_error{"SSL_read failed: error code " + std::to_string(err)};
+            }
+            total += static_cast<size_t>(got);
         }
-        total += static_cast<size_t>(got);
+    } else {
+        boost::system::error_code ec;
+        boost::asio::read(tcp_sock_, boost::asio::buffer(buf.data(), n), ec);
+        if (ec) throw std::runtime_error{"read failed: " + ec.message()};
     }
     return buf;
 }
 
 void Connection::ssl_write_all(const std::string& data) {
-    size_t total = 0;
-    while (total < data.size()) {
-        int written = SSL_write(ssl_, data.data() + total,
-                                static_cast<int>(data.size() - total));
-        if (written <= 0) {
-            int err = SSL_get_error(ssl_, written);
-            throw std::runtime_error{"SSL_write failed: error code " + std::to_string(err)};
+    if (tls_) {
+        size_t total = 0;
+        while (total < data.size()) {
+            int written = SSL_write(ssl_, data.data() + total,
+                                    static_cast<int>(data.size() - total));
+            if (written <= 0) {
+                int err = SSL_get_error(ssl_, written);
+                throw std::runtime_error{"SSL_write failed: error code " + std::to_string(err)};
+            }
+            total += static_cast<size_t>(written);
         }
-        total += static_cast<size_t>(written);
+    } else {
+        boost::system::error_code ec;
+        boost::asio::write(tcp_sock_, boost::asio::buffer(data.data(), data.size()), ec);
+        if (ec) throw std::runtime_error{"write failed: " + ec.message()};
     }
 }
 
@@ -201,7 +217,7 @@ std::string Connection::ws_key_base64() {
 void Connection::ws_handshake() {
     std::string key = ws_key_base64();
     std::string request =
-        "GET " + path_ + " HTTP/1.1\r\n"
+        "GET /backend/ws HTTP/1.1\r\n"
         "Host: "                  + host_               + "\r\n"
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
@@ -215,10 +231,7 @@ void Connection::ws_handshake() {
     std::string response;
     while (response.size() < 4
            || response.substr(response.size() - 4) != "\r\n\r\n") {
-        char c;
-        int got = SSL_read(ssl_, &c, 1);
-        if (got <= 0) throw std::runtime_error{"ws_handshake: connection closed during upgrade"};
-        response += c;
+        response += ssl_read_exact(1);
         if (response.size() > 8192)
             throw std::runtime_error{"ws_handshake: response header too large"};
     }
@@ -319,7 +332,16 @@ std::string Connection::ws_decode_frame() {
         std::string payload = ssl_read_exact(static_cast<size_t>(payload_len));
 
         // Control frames are never fragmented and may interleave data fragments.
-        if (opcode == 0x08) throw std::runtime_error{"ws: server sent close frame"};
+        if (opcode == 0x08) {
+            if (payload.size() >= 2) {
+                uint16_t code = (static_cast<uint8_t>(payload[0]) << 8)
+                              |  static_cast<uint8_t>(payload[1]);
+                std::string reason = payload.size() > 2 ? payload.substr(2) : std::string{};
+                throw std::runtime_error{"ws: close " + std::to_string(code) +
+                                         (reason.empty() ? "" : ": " + reason)};
+            }
+            throw std::runtime_error{"ws: server sent close frame"};
+        }
         if (opcode == 0x09) { ws_send_frame(0x0a, payload); continue; }  // ping → pong
         if (opcode == 0x0a) continue;                                    // pong → ignore
 
@@ -354,6 +376,24 @@ std::string Connection::ws_decode_frame() {
 // this, the window is microseconds, and the typical outcome is a dropped
 // connection. The full fix (single-threaded non-blocking I/O) is tracked
 // separately; until then this constraint is accepted deliberately.
+void Connection::ping_loop() {
+    while (running_) {
+        // Sleep 5s in 100ms chunks so disconnect() wakes us quickly via running_=false.
+        for (int i = 0; i < 50 && running_; ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (!running_) break;
+        try {
+            ws_send_frame(0x09, "");  // WebSocket ping — server must pong back
+        } catch (...) {
+            // Write failed: socket is silently dead (e.g. WiFi dropped with no RST).
+            // Close the socket so SSL_read in read_loop gets an error and fires on_disconnect.
+            boost::system::error_code ec;
+            tcp_sock_.close(ec);
+            break;
+        }
+    }
+}
+
 void Connection::read_loop() {
     while (running_) {
         try {

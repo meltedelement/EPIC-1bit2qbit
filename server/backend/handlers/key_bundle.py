@@ -96,7 +96,9 @@ async def handle_request_key_bundle(frame: RequestKeyBundleFrame, ctx: WsContext
             error,
         )
         await ctx.websocket.send_text(
-            ErrorFrame(code="no_key_bundle", detail=error).model_dump_json()
+            ErrorFrame(
+                code="no_key_bundle", detail=error, target=frame.target_username
+            ).model_dump_json()
         )
         return
 

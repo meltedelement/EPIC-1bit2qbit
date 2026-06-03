@@ -1,7 +1,9 @@
 #pragma once
 #include <cstdint>
 #include <string>
-#include <sys/types.h>
+#ifndef _WIN32
+#  include <sys/types.h>
+#endif
 #include <nlohmann/json.hpp>
 
 // IPC bridge to the Python crypto subprocess (client/subprocess_handler.py).
@@ -33,9 +35,13 @@ public:
     // script_path is resolved relative to the subprocess's working directory; its
     // parent directory must contain the crypto_functions package (Python adds the
     // script's own directory to sys.path, so pointing at client/subprocess_handler.py
-    // is sufficient). Throws std::runtime_error on fork/pipe failure.
+    // is sufficient). Throws std::runtime_error on spawn failure.
     void start(const std::string& script_path = "subprocess_handler.py",
+#ifdef _WIN32
+               const std::string& python_exe  = "python");
+#else
                const std::string& python_exe  = "python3");
+#endif
 
     // Closes the pipes and reaps the subprocess. Safe to call more than once.
     void stop();
@@ -88,12 +94,24 @@ public:
                                    const nlohmann::json& encrypted_message,
                                    const std::string& associated_data);
 
+    // ── Storage encryption (DEK-backed AES-256-GCM) ────────────────────────────
+    // Encrypt/decrypt arbitrary plaintext for local SQLite storage.
+    // plaintext_b64: base64-encoded raw bytes. Returns {nonce, ciphertext} or {plaintext}.
+    nlohmann::json encrypt_for_storage(const std::string& plaintext_b64);
+    nlohmann::json decrypt_from_storage(const nlohmann::json& encrypted);
+
 private:
     std::string send_recv(const std::string& line);  // write request line, read reply line
     std::string read_line();                          // buffered readline from the subprocess
 
-    int         stdin_fd_{-1};         // we write  → subprocess stdin
-    int         stdout_fd_{-1};        // we read   ← subprocess stdout
+#ifdef _WIN32
+    void*       stdin_handle_{nullptr};   // we write  → subprocess stdin
+    void*       stdout_handle_{nullptr};  // we read   ← subprocess stdout
+    void*       process_handle_{nullptr};
+#else
+    int         stdin_fd_{-1};            // we write  → subprocess stdin
+    int         stdout_fd_{-1};           // we read   ← subprocess stdout
     pid_t       subprocess_pid_{-1};
-    std::string read_buf_;             // holds bytes read past the current line
+#endif
+    std::string read_buf_;
 };

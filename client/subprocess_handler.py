@@ -45,6 +45,10 @@ _active_dek: bytes | None = None  # pylint: disable=invalid-name
 _STATE_AAD = b"X3DH_STATE"
 _NONCE_LEN = 12
 
+# Single reusable event loop — avoids the per-call ProactorEventLoop
+# create/destroy overhead on Windows (IOCP setup is expensive).
+_loop = asyncio.new_event_loop()
+
 
 def _require_dek() -> bytes:
     if _active_dek is None:
@@ -185,7 +189,7 @@ def _handle_create_state(_: dict) -> dict:
 def _handle_get_bundle(p: dict) -> dict:
     dek = _require_dek()
     state = _unwrap_state(p["encrypted_state"], dek)
-    return _serialize_bundle(state.bundle)
+    return {"bundle": _serialize_bundle(state.bundle), "encrypted_state": _wrap_state(state, dek)}
 
 
 def _handle_generate_pre_keys(p: dict) -> dict:
@@ -217,7 +221,7 @@ def _handle_get_num_pre_keys(p: dict) -> dict:
 def _handle_get_shared_secret_active(p: dict) -> dict:
     dek = _require_dek()
     state = _unwrap_state(p["encrypted_state"], dek)
-    shared_secret, ad, header = asyncio.run(
+    shared_secret, ad, header = _loop.run_until_complete(
         state.get_shared_secret_active(_deserialize_bundle(p["bob_bundle"]))
     )
     return {
@@ -232,7 +236,7 @@ def _handle_get_shared_secret_active(p: dict) -> dict:
 def _handle_get_shared_secret_passive(p: dict) -> dict:
     dek = _require_dek()
     state = _unwrap_state(p["encrypted_state"], dek)
-    shared_secret, ad, spk_pair = asyncio.run(
+    shared_secret, ad, spk_pair = _loop.run_until_complete(
         state.get_shared_secret_passive(_deserialize_x3dh_header(p["header"]))
     )
     return {
@@ -261,7 +265,7 @@ def _handle_encrypt_initial_message(p: dict) -> dict:
             **dr_configuration,
         )
 
-    dr, msg = asyncio.run(run())
+    dr, msg = _loop.run_until_complete(run())
     return {"encrypted_message": _serialize_ratchet_message(msg), "ratchet_state": dr.json}
 
 
@@ -277,7 +281,7 @@ def _handle_decrypt_initial_message(p: dict) -> dict:
             **dr_configuration,
         )
 
-    dr, plaintext = asyncio.run(run())
+    dr, plaintext = _loop.run_until_complete(run())
     return {"plaintext": _b64(plaintext), "ratchet_state": dr.json}
 
 
@@ -287,7 +291,7 @@ def _handle_encrypt_message(p: dict) -> dict:
     async def run():
         return await dr.encrypt_message(_unb64(p["message"]), _unb64(p["associated_data"]))
 
-    msg = asyncio.run(run())
+    msg = _loop.run_until_complete(run())
     return {"encrypted_message": _serialize_ratchet_message(msg), "ratchet_state": dr.json}
 
 
@@ -298,8 +302,26 @@ def _handle_decrypt_message(p: dict) -> dict:
     async def run():
         return await dr.decrypt_message(msg, _unb64(p["associated_data"]))
 
-    plaintext = asyncio.run(run())
+    plaintext = _loop.run_until_complete(run())
     return {"plaintext": _b64(plaintext), "ratchet_state": dr.json}
+
+
+# Storage encryption — AES-256-GCM under the active DEK, for persisting
+# sensitive fields (message bodies, ratchet state, associated data) to SQLite.
+_STORAGE_AAD = b"EPIC_STORAGE"
+
+
+def _handle_encrypt_with_dek(p: dict) -> dict:
+    dek = _require_dek()
+    nonce = os.urandom(_NONCE_LEN)
+    ciphertext = AESGCM(dek).encrypt(nonce, _unb64(p["plaintext"]), _STORAGE_AAD)
+    return {"nonce": _b64(nonce), "ciphertext": _b64(ciphertext)}
+
+
+def _handle_decrypt_with_dek(p: dict) -> dict:
+    dek = _require_dek()
+    plaintext = AESGCM(dek).decrypt(_unb64(p["nonce"]), _unb64(p["ciphertext"]), _STORAGE_AAD)
+    return {"plaintext": _b64(plaintext)}
 
 
 # Dispatch table and main loop
@@ -319,6 +341,8 @@ _DISPATCH: dict[str, callable] = {
     "decrypt_initial_message": _handle_decrypt_initial_message,
     "encrypt_message": _handle_encrypt_message,
     "decrypt_message": _handle_decrypt_message,
+    "encrypt_with_dek": _handle_encrypt_with_dek,
+    "decrypt_with_dek": _handle_decrypt_with_dek,
 }
 
 
@@ -333,6 +357,14 @@ def _process(request: dict) -> dict:
 
 
 def main() -> None:
+    # Windows defaults stdin/stdout to the system ANSI code page (e.g. cp1252).
+    # The doubleratchet library stores raw byte values as Latin-1 characters, which
+    # nlohmann serialises as UTF-8 multibyte sequences. Reconfigure to UTF-8 so
+    # those sequences roundtrip correctly instead of being decoded as cp1252 and
+    # producing code points > 255 that Pydantic rejects.
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
+
     for line in sys.stdin:
         line = line.strip()
         if not line:

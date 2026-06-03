@@ -1,20 +1,131 @@
 #include "client/Client.h"
 
 #include <array>
+#include <chrono>
+#include <cstdlib>
 #include <exception>
 #include <stdexcept>
 #include <utility>
+
+#include <filesystem>
+
+#include <openssl/err.h>
+#include <openssl/x509.h>
 
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
 #include "connection/Connection.h"
+#include "connection/TlsContext.h"
 #include "crypto/CryptoProxy.h"
 #include "messaging/Message.h"
 #include "messaging/MessageStore.h"
 #include "ui/App.h"
+#include "log.h"
 
 namespace {
+
+std::filesystem::path bin_dir() {
+#ifdef _WIN32
+    char buf[MAX_PATH];
+    GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    return std::filesystem::path(buf).parent_path();
+#else
+    char buf[4096];
+    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (len <= 0) return std::filesystem::current_path();
+    buf[len] = '\0';
+    return std::filesystem::path(buf).parent_path();
+#endif
+}
+
+std::string db_path_for(const std::string& username) {
+#ifdef _WIN32
+    const char* appdata = std::getenv("LOCALAPPDATA");
+    std::filesystem::path base = appdata ? appdata
+                                         : std::filesystem::temp_directory_path().string();
+#else
+    const char* xdg  = std::getenv("XDG_DATA_HOME");
+    const char* home = std::getenv("HOME");
+    std::filesystem::path base = xdg ? xdg
+                                     : (std::string(home ? home : ".") + "/.local/share");
+#endif
+    std::filesystem::path dir = base / "epic";
+    std::filesystem::create_directories(dir);
+    return (dir / (username + ".db")).string();
+}
+
+// ── One-shot HTTPS POST ───────────────────────────────────────────────────────
+// Used for registration (a plain HTTP exchange, not a WebSocket session).
+
+struct HttpResponse { int status; std::string body; };
+
+HttpResponse https_post(const std::string& host, uint16_t port,
+                        const std::string& path, const std::string& json_body) {
+    boost::asio::io_context io;
+    boost::asio::ip::tcp::socket sock{io};
+    boost::asio::ip::tcp::resolver resolver{io};
+    boost::asio::connect(sock, resolver.resolve(host, std::to_string(port)));
+
+    TlsContext tls_ctx;
+    SSL* ssl = SSL_new(tls_ctx.ctx());
+    if (!ssl) throw std::runtime_error{"SSL_new failed"};
+    struct SslGuard { SSL* s; ~SslGuard() { SSL_free(s); } } guard{ssl};
+
+    SSL_set_tlsext_host_name(ssl, host.c_str());
+    SSL_set1_host(ssl, host.c_str());
+    SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr);
+    SSL_set_fd(ssl, static_cast<int>(sock.native_handle()));
+
+    if (SSL_connect(ssl) != 1) {
+        std::string msg = "SSL_connect failed";
+        long verify = SSL_get_verify_result(ssl);
+        if (verify != X509_V_OK)
+            msg += std::string{": "} + X509_verify_cert_error_string(verify);
+        unsigned long err;
+        while ((err = ERR_get_error()) != 0)
+            msg += std::string{"; "} + ERR_error_string(err, nullptr);
+        throw std::runtime_error{msg};
+    }
+
+    const std::string request =
+        "POST " + path + " HTTP/1.1\r\n"
+        "Host: " + host + "\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: " + std::to_string(json_body.size()) + "\r\n"
+        "Connection: close\r\n"
+        "\r\n" + json_body;
+
+    size_t total = 0;
+    while (total < request.size()) {
+        int n = SSL_write(ssl, request.data() + total,
+                          static_cast<int>(request.size() - total));
+        if (n <= 0) throw std::runtime_error{"SSL_write failed during registration"};
+        total += static_cast<size_t>(n);
+    }
+
+    std::string response;
+    char buf[4096];
+    while (true) {
+        int n = SSL_read(ssl, buf, static_cast<int>(sizeof(buf)));
+        if (n > 0) { response.append(buf, static_cast<size_t>(n)); continue; }
+        int err = SSL_get_error(ssl, n);
+        if (err == SSL_ERROR_ZERO_RETURN || err == SSL_ERROR_SYSCALL) break;
+        throw std::runtime_error{"SSL_read failed during registration"};
+    }
+
+    // Parse "HTTP/1.1 NNN ..."
+    const size_t sp1 = response.find(' ');
+    const size_t sp2 = sp1 != std::string::npos ? response.find(' ', sp1 + 1) : std::string::npos;
+    if (sp1 == std::string::npos || sp2 == std::string::npos)
+        throw std::runtime_error{"malformed HTTP response from server"};
+    const int status = std::stoi(response.substr(sp1 + 1, sp2 - sp1 - 1));
+
+    const size_t body_start = response.find("\r\n\r\n");
+    std::string body = (body_start != std::string::npos) ? response.substr(body_start + 4) : "";
+
+    return {status, std::move(body)};
+}
 
 // base64 over OpenSSL's EVP codec — the same primitive Connection uses for the
 // WebSocket key. Crypto material crosses the IPC boundary as base64 strings; the
@@ -45,20 +156,30 @@ std::string b64_decode(const std::string& in) {
     return out;
 }
 
-// The ratchet encrypts a serialized MessageContent, not the raw text — keeping the
-// envelope ready for edit/delete/reply types later. For now only the Standard body
-// travels; the field set matches messaging/Message.h.
-std::string content_to_message(const std::string& plaintext) {
-    const nlohmann::json content = {
-        {"type", static_cast<int>(MessageType::Standard)},
+std::string content_to_message(const std::string& plaintext,
+                               MessageType type = MessageType::Standard,
+                               const std::string& target_mid = "") {
+    nlohmann::json content = {
+        {"type", static_cast<int>(type)},
         {"body", plaintext},
     };
+    if (!target_mid.empty()) content["target_mid"] = target_mid;
     return b64_encode(content.dump());
 }
 
-std::string message_to_body(const std::string& plaintext_b64) {
-    const nlohmann::json content = nlohmann::json::parse(b64_decode(plaintext_b64));
-    return content.value("body", std::string{});
+struct ParsedContent {
+    MessageType type{MessageType::Standard};
+    std::string body;
+    std::string target_mid;
+};
+
+ParsedContent message_to_content(const std::string& plaintext_b64) {
+    const nlohmann::json j = nlohmann::json::parse(b64_decode(plaintext_b64));
+    ParsedContent c;
+    c.type       = static_cast<MessageType>(j.value("type", 0));
+    c.body       = j.value("body", std::string{});
+    c.target_mid = j.value("target_mid", std::string{});
+    return c;
 }
 
 }  // namespace
@@ -70,96 +191,164 @@ Client::Client(const std::string& host, uint16_t port)
 Client::~Client() = default;
 
 void Client::run() {
+    epic_log("Client::run start");
     // Build the crypto subprocess bridge, local store, and the UI.
     crypto_ = std::make_unique<CryptoProxy>();
-    store_  = std::make_unique<MessageStore>("epic-client.db");
 
     AppCallbacks cbs;
-    cbs.on_register = [this](std::string u, std::string p) { do_register(u, p); };
-    cbs.on_login    = [this](std::string u, std::string p) { do_login(u, p); };
+    cbs.on_register = [this](std::string u, std::string p, std::string pin) { do_register(u, p, pin); };
+    cbs.on_login    = [this](std::string u, std::string p, std::string pin) { do_login(u, p, pin); };
     cbs.on_send     = [this](std::string r, std::string t) { do_send(r, t); };
     cbs.on_delete   = [this](uint64_t id, bool both) { do_delete(id, both); };
     cbs.on_edit     = [this](uint64_t id, std::string t) { do_edit(id, t); };
+    cbs.on_forward  = [this](std::string r, std::string t) { do_forward(r, t); };
+    cbs.on_logout   = [this] { do_logout(); };
     app_ = std::make_unique<App>(std::move(cbs));
 
-    // Spawn client/subprocess_handler.py with its stdin/stdout piped to us. The
-    // script path is resolved relative to the subprocess's working directory, so
-    // epic-client must be launched from the client/ directory (or the default
-    // path adjusted) for the crypto_functions package to import.
-    crypto_->start();
+    crypto_->start(std::filesystem::weakly_canonical(
+        bin_dir() / ".." / "subprocess_handler.py").string());
 
     app_->run();  // blocking TUI loop; returns when the user quits
 
+    quit_ = true;
     if (connection_) connection_->disconnect();
     crypto_->stop();
 }
 
 // ── Outbound actions (called from UI) ────────────────────────────────────────────
 
-void Client::do_register(const std::string& username, const std::string& password) {
-    // Registration derives a fresh Data Encryption Key from the user's password and
-    // a fresh X3DH state (identity key, signed pre-key, one-time pre-keys). The raw
-    // DEK stays inside the crypto subprocess; the encrypted blobs come back here.
-    try {
-        std::lock_guard<std::mutex> lk(mutex_);
-        const nlohmann::json dek = crypto_->create_dek(password, username);
-        encrypted_dek_ = dek.at("encrypted_dek");
-
-        const nlohmann::json state = crypto_->create_state();
-        encrypted_state_ = state.at("encrypted_state");
-        current_user_    = username;
-
-        // TODO(persistence): store encrypted_dek_ / encrypted_state_ in the key store.
-        // TODO(network): create the server-side account via HTTPS POST /register —
-        // Connection is WSS-only, so login currently only works for a user already
-        // registered on the server. The key bundle itself is published over WS on login.
-        app_->push_status("Registered '" + username + "' — keys created. "
-                          "(server account + bundle publish happen on login)");
-    } catch (const std::exception& e) {
-        app_->push_status(std::string("Registration failed: ") + e.what());
+void Client::do_register(const std::string& username, const std::string& auth_password,
+                         const std::string& key_pin) {
+    if (auth_password == key_pin) {
+        app_->push_status("Registration failed: authentication password and Key PIN must be different.");
+        return;
     }
+    try {
+        const nlohmann::json reg_body = {{"username", username}, {"password", auth_password}};
+        const auto resp = https_post(host_, port_, "/backend/register", reg_body.dump());
+        if (resp.status == 409)
+            throw std::runtime_error{"username already taken"};
+        if (resp.status != 201)
+            throw std::runtime_error{"server returned HTTP " + std::to_string(resp.status)};
+
+        std::lock_guard<std::mutex> lk(mutex_);
+        store_ = std::make_unique<MessageStore>(db_path_for(username));
+        encrypted_dek_   = crypto_->create_dek(key_pin, username).at("encrypted_dek");
+        encrypted_state_ = crypto_->create_state().at("encrypted_state");
+        current_user_    = username;
+        store_->save_dek(username, encrypted_dek_.dump());
+        store_->save_encrypted_state(username, encrypted_state_.dump());
+    } catch (const std::exception& e) {
+        epic_log("do_register: exception: " + std::string(e.what()));
+        const std::string raw = e.what();
+        std::string msg;
+        if (raw.find("already taken") != std::string::npos)
+            msg = "Username already taken — choose a different one.";
+        else if (raw.find("HTTP") != std::string::npos)
+            msg = "Registration failed: server error. Try again later.";
+        else if (raw.find("SSL") != std::string::npos || raw.find("refused") != std::string::npos)
+            msg = "Could not reach server — check your network.";
+        else
+            msg = "Registration failed: " + raw;
+        app_->push_status(msg);
+        return;
+    }
+
+    do_login(username, auth_password, key_pin);
 }
 
-void Client::do_login(const std::string& username, const std::string& password) {
-    // Login re-derives the KEK from the password and unlocks the stored DEK inside
-    // the crypto subprocess. A wrong password fails the AES-GCM tag check and the
-    // subprocess returns an error, which surfaces here.
+void Client::do_login(const std::string& username, const std::string& auth_password,
+                      const std::string& key_pin) {
+    epic_log("do_login: user=" + username);
     try {
+        store_ = std::make_unique<MessageStore>(db_path_for(username));
+
+        // Load the persisted DEK blob if we don't have it in memory already. We do
+        // NOT unlock it here: the PIN is only checked after the server validates the
+        // password (see handle_ws_frame). Unlocking before then would expose a local
+        // "wrong PIN" oracle that lets anyone probe accounts without a valid password.
         if (encrypted_dek_.is_null()) {
-            // TODO(persistence): load encrypted_dek_ from the local key store here.
-            app_->push_status("No local key material for '" + username +
-                              "'. Register on this device first.");
-            return;
+            if (auto stored = store_->load_dek(username))
+                encrypted_dek_ = nlohmann::json::parse(*stored);
         }
-        {
-            std::lock_guard<std::mutex> lk(mutex_);
-            crypto_->unlock_dek(password, username, encrypted_dek_);
+        pending_key_pin_ = key_pin;
+
+        // Load persisted X3DH state (needed to establish new sessions after restart).
+        if (encrypted_state_.is_null()) {
+            if (auto stored = store_->load_encrypted_state(username))
+                encrypted_state_ = nlohmann::json::parse(*stored);
         }
-        current_user_ = username;
+
+        current_user_  = username;
 
         // Bring up the network. Callbacks must be set BEFORE connect(): the read
         // thread starts inside connect() and may fire on_message immediately.
-        connection_ = std::make_unique<Connection>(host_, port_);
+        connection_ = std::make_unique<Connection>(host_, port_, port_ == 443);
         connection_->on_message([this](std::string frame) { handle_ws_frame(frame); });
-        connection_->on_disconnect(
-            [this](std::string reason) { app_->push_status("Disconnected: " + reason); });
+        connection_->on_disconnect([this](std::string reason) {
+            epic_log("on_disconnect: " + reason);
+            app_->set_connected(false);
+            if (quit_.load()) return;
+            std::string msg;
+            if (reason.find("4001") != std::string::npos)
+                msg = "Incorrect password.";
+            else if (reason.find("4002") != std::string::npos)
+                msg = "Already logged in from another device.";
+            else
+                msg = "Connection lost — please log in again.";
+            {
+                std::lock_guard<std::mutex> lk(mutex_);
+                current_user_.clear();
+                conversations_.clear();
+                pending_sends_.clear();
+                encrypted_dek_   = nlohmann::json{};
+                encrypted_state_ = nlohmann::json{};
+                store_.reset();
+                pin_fail_count_ = 0;
+            }
+            app_->push_status(msg);
+            app_->return_to_login();
+        });
+
+        // Pin the server cert TOFU-style: prefer the fingerprint persisted from a
+        // previous run so a cert swap across restarts is caught, not silently re-pinned.
+        if (server_cert_pin_.empty()) {
+            if (auto stored = store_->load_server_cert(host_))
+                server_cert_pin_ = *stored;
+        }
 
         connection_->connect(server_cert_pin_);
-        if (server_cert_pin_.empty()) server_cert_pin_ = connection_->cert_fingerprint();
+        if (server_cert_pin_.empty()) {
+            server_cert_pin_ = connection_->cert_fingerprint();
+            store_->save_server_cert(host_, server_cert_pin_);
+        }
 
         // First WS frame is the login (no tokens — the connection is the session).
-        send_login_frame(username, password);
-        publish_key_bundle();
-
-        app_->push_status("Logged in as '" + username + "' — session open.");
+        // The server echoes {"username":"..."} on success; advance_to_chat fires there.
+        send_login_frame(username, auth_password);
     } catch (const std::exception& e) {
-        app_->push_status(std::string("Login failed: ") + e.what());
+        epic_log("do_login: exception: " + std::string(e.what()));
+        const std::string raw = e.what();
+        std::string msg;
+        if (raw.find("pin mismatch") != std::string::npos)
+            msg = "Server certificate has changed — contact your administrator.";
+        else if (raw.find("certificate verify") != std::string::npos || raw.find("cert verify") != std::string::npos)
+            msg = "Could not verify server certificate.";
+        else if (raw.find("SSL") != std::string::npos)
+            msg = "Could not establish a secure connection.";
+        else if (raw.find("refused") != std::string::npos || raw.find("ws_handshake") != std::string::npos)
+            msg = "Could not reach server.";
+        else
+            msg = "Could not connect to server.";
+        app_->push_status(msg);
         connection_.reset();
     }
 }
 
 void Client::do_send(const std::string& recipient, const std::string& plaintext) {
+    epic_log("do_send: to=" + recipient + " text=" + plaintext);
     if (!connection_ || !connection_->is_connected()) {
+        epic_log("do_send: not connected");
         app_->push_status("Not connected — log in first.");
         return;
     }
@@ -167,12 +356,10 @@ void Client::do_send(const std::string& recipient, const std::string& plaintext)
         std::lock_guard<std::mutex> lk(mutex_);
         auto it = conversations_.find(recipient);
         if (it != conversations_.end() && !it->second.ratchet_state().empty()) {
-            // Established session — advance the ratchet and send.
+            epic_log("do_send: established session, calling encrypt_and_send");
             encrypt_and_send(it->second, plaintext);
         } else {
-            // First contact — we need the recipient's key bundle before we can
-            // derive a shared secret. Stash the text and ask the server; the send
-            // completes in on_key_bundle_response() when the bundle arrives.
+            epic_log("do_send: no session yet, requesting key bundle for " + recipient);
             pending_sends_[recipient].push_back(plaintext);
             const nlohmann::json frame = {
                 {"type", "request_key_bundle"},
@@ -181,12 +368,128 @@ void Client::do_send(const std::string& recipient, const std::string& plaintext)
             connection_->send_text(frame.dump());
         }
     } catch (const std::exception& e) {
-        app_->push_status(std::string("Send failed: ") + e.what());
+        epic_log("do_send: exception: " + std::string(e.what()));
+        app_->push_status("Message could not be sent.");
     }
 }
 
-void Client::do_delete(uint64_t /*message_id*/, bool /*for_both_parties*/) {}
-void Client::do_edit(uint64_t /*message_id*/, const std::string& /*new_plaintext*/) {}
+void Client::do_delete(uint64_t message_id, bool /*for_both_parties*/) {
+    if (!store_) return;
+    std::lock_guard<std::mutex> lk(mutex_);
+    // Find which conversation owns this message and get its mid
+    std::string target_mid;
+    std::string target_peer;
+    for (auto& [peer, conv] : conversations_) {
+        target_mid = conv.get_message_mid(message_id);
+        if (!target_mid.empty()) { target_peer = peer; break; }
+    }
+    // Mark deleted locally
+    store_->mark_message_deleted(message_id);
+    for (auto& [peer, conv] : conversations_)
+        conv.mark_message_deleted(message_id);
+    app_->mark_message_deleted(message_id);
+    // Propagate to the other party if we have a session and a mid to reference
+    if (!target_mid.empty() && !target_peer.empty()) {
+        auto it = conversations_.find(target_peer);
+        if (it != conversations_.end() && !it->second.ratchet_state().empty())
+            send_ratchet_control(it->second,
+                content_to_message("", MessageType::Delete, target_mid));
+    }
+}
+
+void Client::do_edit(uint64_t message_id, const std::string& new_plaintext) {
+    if (!store_) return;
+    std::lock_guard<std::mutex> lk(mutex_);
+    // Find the message's mid and peer
+    std::string target_mid;
+    std::string target_peer;
+    for (auto& [peer, conv] : conversations_) {
+        target_mid = conv.get_message_mid(message_id);
+        if (!target_mid.empty()) { target_peer = peer; break; }
+    }
+    // Update locally
+    store_->update_message_body(message_id, storage_encrypt(new_plaintext));
+    for (auto& [peer, conv] : conversations_)
+        conv.update_message_body(message_id, new_plaintext);
+    app_->update_message_body(message_id, new_plaintext);
+    // Propagate to the other party
+    if (!target_mid.empty() && !target_peer.empty()) {
+        auto it = conversations_.find(target_peer);
+        if (it != conversations_.end() && !it->second.ratchet_state().empty())
+            send_ratchet_control(it->second,
+                content_to_message(new_plaintext, MessageType::Edit, target_mid));
+    }
+}
+
+void Client::do_forward(const std::string& recipient, const std::string& body) {
+    if (!connection_ || !connection_->is_connected()) {
+        app_->push_status("Not connected — log in first.");
+        return;
+    }
+    try {
+        std::lock_guard<std::mutex> lk(mutex_);
+        auto it = conversations_.find(recipient);
+        if (it != conversations_.end() && !it->second.ratchet_state().empty()) {
+            encrypt_and_send_typed(it->second, body, MessageType::Forward);
+        } else {
+            pending_sends_[recipient].push_back(body);
+            const nlohmann::json frame = {
+                {"type", "request_key_bundle"},
+                {"target_username", recipient},
+            };
+            connection_->send_text(frame.dump());
+        }
+    } catch (const std::exception& e) {
+        epic_log("do_forward: exception: " + std::string(e.what()));
+        app_->push_status("Message could not be forwarded.");
+    }
+}
+
+void Client::do_logout() {
+    epic_log("do_logout: begin");
+    // Clear session state before disconnecting so on_disconnect won't try to return_to_login again.
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        current_user_.clear();
+        conversations_.clear();
+        pending_sends_.clear();
+        encrypted_dek_   = nlohmann::json{};
+        encrypted_state_ = nlohmann::json{};
+        server_cert_pin_.clear();
+        store_.reset();
+        pin_fail_count_ = 0;
+    }
+
+    if (connection_) {
+        connection_->disconnect();
+        connection_.reset();
+    }
+
+    app_->return_to_login();
+    epic_log("do_logout: done");
+}
+
+void Client::abort_login_session() {
+    epic_log("abort_login_session");
+    // Runs on the UI thread (posted via App::run_on_ui): disconnect() joins the
+    // Connection read thread, which is where the failed PIN unlock was detected, so
+    // it cannot run there. Note: pin_fail_count_ is intentionally NOT reset, so the
+    // 3-strike lockout survives the teardown. The connection is moved out and
+    // destroyed outside the lock to avoid holding mutex_ across the thread join.
+    std::unique_ptr<Connection> conn;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        current_user_.clear();
+        conversations_.clear();
+        pending_sends_.clear();
+        encrypted_dek_   = nlohmann::json{};
+        encrypted_state_ = nlohmann::json{};
+        pending_key_pin_.clear();
+        store_.reset();
+        conn = std::move(connection_);
+    }
+    if (conn) conn->disconnect();
+}
 
 // ── Network helpers ──────────────────────────────────────────────────────────────
 
@@ -200,7 +503,10 @@ void Client::publish_key_bundle() {
     {
         std::lock_guard<std::mutex> lk(mutex_);
         if (encrypted_state_.is_null()) return;  // registered on another device
-        bundle = crypto_->get_bundle(encrypted_state_);
+        const nlohmann::json result = crypto_->get_bundle(encrypted_state_);
+        bundle           = result.at("bundle");
+        encrypted_state_ = result.at("encrypted_state");
+        store_->save_encrypted_state(current_user_, encrypted_state_.dump());
     }
     send_key_bundle(bundle);
 }
@@ -222,29 +528,134 @@ void Client::send_key_bundle(const nlohmann::json& bundle) {
 // ── Inbound (Connection read thread) ─────────────────────────────────────────────
 
 void Client::handle_ws_frame(const std::string& json_frame) {
+    epic_log("handle_ws_frame: raw=" + json_frame.substr(0, 120));
     nlohmann::json frame;
     try {
         frame = nlohmann::json::parse(json_frame);
     } catch (const std::exception&) {
+        epic_log("handle_ws_frame: parse failed");
         app_->push_status("Received malformed frame from server.");
         return;
     }
 
     const std::string type = frame.value("type", std::string{});
-    if (type == "deliver_message") {
+    epic_log("handle_ws_frame: type=" + type);
+    if (frame.contains("username") && !frame.contains("type")) {
+        // Auth confirmation: server echoes {"username":"..."} on successful login.
+        // Only now do we decrypt and load conversations — plaintext never enters
+        // memory until the server has validated the password.
+        if (frame.value("username", std::string{}) == current_user_) {
+            // Password accepted by the server — only now do we attempt the local PIN
+            // unlock. A wrong PIN (or absent key material) is therefore unreachable
+            // without a valid password, so neither can be probed as a local oracle.
+            bool have_dek = false;
+            bool pin_ok   = false;
+            {
+                std::lock_guard<std::mutex> lk(mutex_);
+                have_dek = !encrypted_dek_.is_null();
+                if (have_dek) {
+                    try {
+                        crypto_->unlock_dek(pending_key_pin_, current_user_, encrypted_dek_);
+                        pin_ok = true;
+                    } catch (const std::exception&) {
+                        pin_ok = false;
+                    }
+                }
+                pending_key_pin_.clear();
+            }
+
+            if (!have_dek) {
+                const std::string user = current_user_;
+                app_->run_on_ui([this] { abort_login_session(); });
+                app_->push_status("No local key material for '" + user +
+                                  "'. Register on this device first.");
+                return;
+            }
+            if (!pin_ok) {
+                ++pin_fail_count_;
+                if (pin_fail_count_ < 3) {
+                    app_->push_status("Incorrect PIN — " + std::to_string(3 - pin_fail_count_) +
+                                      " attempt(s) remaining before lockout.");
+                } else {
+                    int lockout_num = pin_fail_count_ - 2;
+                    int delay = std::min(5 * (1 << (lockout_num - 1)), 300);
+                    app_->start_lockout(delay);
+                }
+                app_->run_on_ui([this] { abort_login_session(); });
+                return;
+            }
+            pin_fail_count_ = 0;  // reset on success
+
+            {
+                std::vector<Conversation> convs;
+                std::lock_guard<std::mutex> lk(mutex_);
+                if (store_) {
+                    for (const auto& peer : store_->list_peers()) {
+                        if (auto raw = store_->load_conversation(peer)) {
+                            Conversation conv{peer};
+                            conv.set_ratchet_state(storage_decrypt(raw->ratchet_state()));
+                            conv.set_associated_data(storage_decrypt(raw->associated_data()));
+                            conv.set_pinned_ik_pub(raw->pinned_ik_pub());
+                            for (const auto& msg : raw->messages()) {
+                                Message m = msg;
+                                m.body = storage_decrypt(m.body);
+                                conv.add_message(std::move(m));
+                            }
+                            conversations_.insert_or_assign(peer, conv);
+                            convs.push_back(std::move(conv));
+                        }
+                    }
+                }
+                if (!convs.empty())
+                    app_->set_conversations(std::move(convs));
+            }
+            publish_key_bundle();
+            app_->set_connected(true);
+            app_->advance_to_chat(current_user_);
+            app_->push_status("Logged in as '" + current_user_ + "' — session open.");
+        }
+    } else if (type == "deliver_message") {
         on_deliver_message(frame);
     } else if (type == "key_bundle_response") {
         on_key_bundle_response(frame);
     } else if (type == "error") {
-        app_->push_status("Server error [" + frame.value("code", std::string{}) + "]: " +
-                          frame.value("detail", std::string{}));
+        const std::string code   = frame.value("code",   std::string{});
+        const std::string detail = frame.value("detail", std::string{});
+        epic_log("handle_ws_frame: server error: code=" + code + " detail=" + detail);
+        if (code == "no_key_bundle") {
+            // Prefer the explicit target field; fall back to parsing the detail string
+            // ("no key bundle found for 'USERNAME'") for older server builds.
+            std::string target = frame.value("target", std::string{});
+            if (target.empty()) {
+                auto close = detail.rfind('\'');
+                if (close != std::string::npos && close > 0) {
+                    auto open = detail.rfind('\'', close - 1);
+                    if (open != std::string::npos && open < close - 1)
+                        target = detail.substr(open + 1, close - open - 1);
+                }
+            }
+            if (!target.empty()) {
+                {
+                    std::lock_guard<std::mutex> lk(mutex_);
+                    pending_sends_.erase(target);
+                    // Drop the conversation if it has no messages — it was opened
+                    // just to attempt this send, and the user doesn't exist.
+                    auto it = conversations_.find(target);
+                    if (it != conversations_.end() && it->second.messages().empty())
+                        conversations_.erase(it);
+                }
+                app_->remove_conversation(target);
+                app_->push_status("User '" + target + "' not found.");
+            }
+        }
     } else {
-        app_->push_status("Unknown frame type from server: " + type);
+        epic_log("handle_ws_frame: unhandled type=" + type);
     }
 }
 
 void Client::on_deliver_message(const nlohmann::json& frame) {
     const std::string sender = frame.value("sender", std::string{});
+    epic_log("on_deliver_message: from=" + sender);
     try {
         const nlohmann::json env = nlohmann::json::parse(frame.at("ciphertext").get<std::string>());
         const nlohmann::json& dr = env.at("dr");
@@ -280,12 +691,16 @@ void Client::on_deliver_message(const nlohmann::json& frame) {
             conv.set_ratchet_state(dec.at("ratchet_state").dump());
             conv.set_pinned_ik_pub(peer_ik);
             store_->pin_identity_key(sender, peer_ik);
+            store_->save_associated_data(sender, storage_encrypt(conv.associated_data()));
+            store_->save_ratchet_state(sender, storage_encrypt(conv.ratchet_state()));
+            store_->save_encrypted_state(current_user_, encrypted_state_.dump());
             plaintext_b64 = dec.at("plaintext").get<std::string>();
         } else if (!conv.ratchet_state().empty()) {
             // Established session — decrypt with the stored ratchet state.
             nlohmann::json rstate    = nlohmann::json::parse(conv.ratchet_state());
             const nlohmann::json dec = crypto_->decrypt_message(rstate, dr, conv.associated_data());
             conv.set_ratchet_state(dec.at("ratchet_state").dump());
+            store_->save_ratchet_state(sender, storage_encrypt(conv.ratchet_state()));
             plaintext_b64 = dec.at("plaintext").get<std::string>();
         } else {
             app_->push_status("Dropped message from '" + sender +
@@ -293,14 +708,44 @@ void Client::on_deliver_message(const nlohmann::json& frame) {
             return;
         }
 
-        const std::string body = message_to_body(plaintext_b64);
+        const ParsedContent   content       = message_to_content(plaintext_b64);
+        const std::string     wire_ct       = frame.value("ciphertext", std::string{});
+        const std::string     msg_mid       = frame.value("mid", std::string{});
+        epic_log("on_deliver_message: type=" + std::to_string(static_cast<int>(content.type))
+                 + " body=" + content.body.substr(0, 60));
+
+        if (content.type == MessageType::Edit) {
+            // Remote party edited a message — update it on our side
+            store_->update_message_body_by_mid(content.target_mid, storage_encrypt(content.body));
+            conv.update_message_body_by_mid(content.target_mid, content.body);
+            app_->update_message_body_by_mid(content.target_mid, content.body);
+            return;
+        }
+        if (content.type == MessageType::Delete) {
+            // Remote party deleted a message — mark it on our side
+            store_->mark_message_deleted_by_mid(content.target_mid);
+            conv.mark_message_deleted_by_mid(content.target_mid);
+            app_->mark_message_deleted_by_mid(content.target_mid);
+            return;
+        }
+
+        // Standard or Forward — add as a new message
         Message msg;
-        msg.peer      = sender;
-        msg.recipient = current_user_;
-        msg.body      = body;
+        msg.peer             = sender;
+        msg.sender           = sender;
+        msg.recipient        = current_user_;
+        msg.type             = content.type;
+        msg.timestamp_ms     = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        msg.body             = content.body;
+        msg.wire_ciphertext  = wire_ct;
+        msg.mid              = msg_mid;
+        Message store_msg    = msg;
+        store_msg.body       = storage_encrypt(content.body);
+        msg.id               = store_->save_message(store_msg);
         conv.add_message(msg);
-        store_->save_message(msg);
-        app_->push_message(sender, body);
+        epic_log("on_deliver_message: calling push_message");
+        app_->push_message(msg);
     } catch (const std::exception& e) {
         app_->push_status("Failed to decrypt message from '" + sender + "': " + e.what());
     }
@@ -308,10 +753,14 @@ void Client::on_deliver_message(const nlohmann::json& frame) {
 
 void Client::on_key_bundle_response(const nlohmann::json& frame) {
     const std::string peer = frame.value("username", std::string{});
+    epic_log("on_key_bundle_response: peer=" + peer);
     std::lock_guard<std::mutex> lk(mutex_);
 
     auto pending = pending_sends_.find(peer);
-    if (pending == pending_sends_.end()) return;  // a bundle we no longer need
+    if (pending == pending_sends_.end()) {
+        epic_log("on_key_bundle_response: no pending sends for " + peer);
+        return;
+    }
     std::vector<std::string> texts = std::move(pending->second);
     pending_sends_.erase(pending);
 
@@ -327,6 +776,7 @@ void Client::on_key_bundle_response(const nlohmann::json& frame) {
             }
         }
     } catch (const std::exception& e) {
+        epic_log("on_key_bundle_response: exception for peer=" + peer + ": " + e.what());
         app_->push_status("Failed to start session with '" + peer + "': " + e.what());
     }
 }
@@ -334,22 +784,85 @@ void Client::on_key_bundle_response(const nlohmann::json& frame) {
 // ── Crypto/session helpers (mutex_ held by caller) ───────────────────────────────
 
 void Client::encrypt_and_send(Conversation& conv, const std::string& plaintext) {
+    epic_log("encrypt_and_send: peer=" + conv.peer());
     nlohmann::json rstate    = nlohmann::json::parse(conv.ratchet_state());
     const nlohmann::json enc = crypto_->encrypt_message(rstate, content_to_message(plaintext),
                                                         conv.associated_data());
     conv.set_ratchet_state(enc.at("ratchet_state").dump());
-    send_chat_frame(conv.peer(), enc.at("encrypted_message"), nullptr);
+    store_->save_ratchet_state(conv.peer(), storage_encrypt(conv.ratchet_state()));
+    nlohmann::json env;
+    env["dr"]   = enc.at("encrypted_message");
+    env["x3dh"] = nullptr;
+    const std::string wire_ct  = env.dump();
+    const std::string msg_mid  = new_mid(conv.peer());
+    send_chat_frame(conv.peer(), enc.at("encrypted_message"), nullptr, msg_mid);
+    Message sent_msg;
+    sent_msg.peer            = conv.peer();
+    sent_msg.sender          = current_user_;
+    sent_msg.recipient       = conv.peer();
+    sent_msg.timestamp_ms    = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    sent_msg.wire_ciphertext = wire_ct;
+    sent_msg.mid             = msg_mid;
+    sent_msg.body            = storage_encrypt(plaintext);
+    sent_msg.id              = store_->save_message(sent_msg);
+    sent_msg.body            = plaintext;  // restore plaintext for in-memory/UI use
+    conv.add_message(sent_msg);
+    epic_log("encrypt_and_send: frame sent, pushing to UI");
+    app_->push_sent_message(sent_msg);
+}
+
+void Client::encrypt_and_send_typed(Conversation& conv, const std::string& plaintext,
+                                    MessageType type) {
+    epic_log("encrypt_and_send_typed: peer=" + conv.peer()
+             + " type=" + std::to_string(static_cast<int>(type)));
+    nlohmann::json rstate    = nlohmann::json::parse(conv.ratchet_state());
+    const nlohmann::json enc = crypto_->encrypt_message(
+        rstate, content_to_message(plaintext, type), conv.associated_data());
+    conv.set_ratchet_state(enc.at("ratchet_state").dump());
+    store_->save_ratchet_state(conv.peer(), storage_encrypt(conv.ratchet_state()));
+    nlohmann::json env;
+    env["dr"]   = enc.at("encrypted_message");
+    env["x3dh"] = nullptr;
+    const std::string wire_ct = env.dump();
+    const std::string msg_mid = new_mid(conv.peer());
+    send_chat_frame(conv.peer(), enc.at("encrypted_message"), nullptr, msg_mid);
+    Message sent_msg;
+    sent_msg.peer            = conv.peer();
+    sent_msg.sender          = current_user_;
+    sent_msg.recipient       = conv.peer();
+    sent_msg.type            = type;
+    sent_msg.timestamp_ms    = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    sent_msg.wire_ciphertext = wire_ct;
+    sent_msg.mid             = msg_mid;
+    sent_msg.body            = storage_encrypt(plaintext);
+    sent_msg.id              = store_->save_message(sent_msg);
+    sent_msg.body            = plaintext;
+    conv.add_message(sent_msg);
+    app_->push_sent_message(sent_msg);
+}
+
+void Client::send_ratchet_control(Conversation& conv, const std::string& content_b64) {
+    nlohmann::json rstate    = nlohmann::json::parse(conv.ratchet_state());
+    const nlohmann::json enc = crypto_->encrypt_message(rstate, content_b64, conv.associated_data());
+    conv.set_ratchet_state(enc.at("ratchet_state").dump());
+    store_->save_ratchet_state(conv.peer(), storage_encrypt(conv.ratchet_state()));
+    send_chat_frame(conv.peer(), enc.at("encrypted_message"), nullptr, new_mid(conv.peer()));
 }
 
 void Client::start_session_and_send(const std::string& peer, const nlohmann::json& bundle,
                                     const std::string& plaintext) {
+    epic_log("start_session_and_send: peer=" + peer);
     const std::string peer_ik = bundle.value("identity_key", std::string{});
+    epic_log("start_session_and_send: peer_ik=" + peer_ik.substr(0, 16) + "...");
 
     // Adapt the server's key_bundle_response (a single one_time_pre_key, possibly
     // null) to the bob_bundle shape the subprocess's X3DH expects (a pre_keys list).
     nlohmann::json otpks = nlohmann::json::array();
     if (bundle.contains("one_time_pre_key") && !bundle.at("one_time_pre_key").is_null())
         otpks.push_back(bundle.at("one_time_pre_key"));
+    epic_log("start_session_and_send: otpk_count=" + std::to_string(otpks.size()));
     const nlohmann::json bob_bundle = {
         {"identity_key", peer_ik},
         {"signed_pre_key", bundle.at("signed_pre_key")},
@@ -357,25 +870,49 @@ void Client::start_session_and_send(const std::string& peer, const nlohmann::jso
         {"pre_keys", otpks},
     };
 
+    epic_log("start_session_and_send: calling get_shared_secret_active");
     const nlohmann::json ss = crypto_->get_shared_secret_active(encrypted_state_, bob_bundle);
     encrypted_state_ = ss.at("encrypted_state");
+    epic_log("start_session_and_send: X3DH done, calling encrypt_initial_message");
     const nlohmann::json enc = crypto_->encrypt_initial_message(
         ss.at("shared_secret").get<std::string>(),
         ss.at("bob_initial_ratchet_pub").get<std::string>(), content_to_message(plaintext),
         ss.at("associated_data").get<std::string>());
+    epic_log("start_session_and_send: encrypt done");
 
     Conversation& conv = conversations_.try_emplace(peer, Conversation{peer}).first->second;
     conv.set_associated_data(ss.at("associated_data").get<std::string>());
     conv.set_ratchet_state(enc.at("ratchet_state").dump());
     conv.set_pinned_ik_pub(peer_ik);
     store_->pin_identity_key(peer, peer_ik);
+    store_->save_associated_data(peer, storage_encrypt(conv.associated_data()));
+    store_->save_ratchet_state(peer, storage_encrypt(conv.ratchet_state()));
+    store_->save_encrypted_state(current_user_, encrypted_state_.dump());
 
     const nlohmann::json header = ss.at("header");
-    send_chat_frame(peer, enc.at("encrypted_message"), &header);
+    nlohmann::json env_init;
+    env_init["dr"]   = enc.at("encrypted_message");
+    env_init["x3dh"] = header;
+    const std::string wire_ct_init  = env_init.dump();
+    const std::string msg_mid_init  = new_mid(peer);
+    send_chat_frame(peer, enc.at("encrypted_message"), &header, msg_mid_init);
+    Message sent_msg;
+    sent_msg.peer            = peer;
+    sent_msg.sender          = current_user_;
+    sent_msg.recipient       = peer;
+    sent_msg.timestamp_ms    = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    sent_msg.wire_ciphertext = wire_ct_init;
+    sent_msg.mid             = msg_mid_init;
+    sent_msg.body            = storage_encrypt(plaintext);
+    sent_msg.id              = store_->save_message(sent_msg);
+    sent_msg.body            = plaintext;  // restore plaintext for in-memory/UI use
+    conv.add_message(sent_msg);
+    app_->push_sent_message(sent_msg);
 }
 
 void Client::send_chat_frame(const std::string& recipient, const nlohmann::json& dr_message,
-                             const nlohmann::json* x3dh_header) {
+                             const nlohmann::json* x3dh_header, const std::string& mid) {
     nlohmann::json env;
     env["dr"]   = dr_message;
     env["x3dh"] = x3dh_header ? *x3dh_header : nlohmann::json(nullptr);
@@ -384,21 +921,29 @@ void Client::send_chat_frame(const std::string& recipient, const nlohmann::json&
         {"type", "send_message"},
         {"recipient", recipient},
         {"ciphertext", env.dump()},
-        {"mid", new_mid()},
+        {"mid", mid},
     };
     connection_->send_text(frame.dump());
 }
 
-std::string Client::new_mid() {
-    std::array<unsigned char, 16> buf{};
-    if (RAND_bytes(buf.data(), static_cast<int>(buf.size())) != 1)
-        throw std::runtime_error{"RAND_bytes failed generating message id"};
-    static constexpr char kHex[] = "0123456789abcdef";
-    std::string mid;
-    mid.reserve(buf.size() * 2);
-    for (unsigned char b : buf) {
-        mid += kHex[b >> 4];
-        mid += kHex[b & 0x0f];
+std::string Client::storage_encrypt(const std::string& plaintext) {
+    const nlohmann::json r = crypto_->encrypt_for_storage(b64_encode(plaintext));
+    return r.dump();  // {"nonce":"...","ciphertext":"..."}
+}
+
+std::string Client::storage_decrypt(const std::string& data) {
+    if (data.empty() || data[0] != '{') return data;
+    try {
+        const nlohmann::json j = nlohmann::json::parse(data);
+        if (!j.contains("nonce") || !j.contains("ciphertext")) return data;
+        return b64_decode(crypto_->decrypt_from_storage(j).at("plaintext").get<std::string>());
+    } catch (...) {
+        return data;  // not an encrypted blob — legacy plaintext row
     }
-    return mid;
+}
+
+std::string Client::new_mid(const std::string& recipient) const {
+    const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    return current_user_ + ":" + recipient + ":" + std::to_string(now_ms);
 }

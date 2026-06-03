@@ -1,18 +1,19 @@
-#include <CLI/CLI.hpp>
 #include "client/Client.h"
+#include "log.h"
 
-int main(int argc, char* argv[]) {
-    CLI::App app{"EPIC secure messaging client"};
+#include <CLI/CLI.hpp>
 
-    std::string host = "localhost";
-    uint16_t    port = 8443;
+int main(int argc, char** argv) {
+    CLI::App app{"EPIC Secure Messenger"};
 
-    app.add_option("--host", host, "Server hostname");
-    app.add_option("--port", port, "Server port");
+    bool log_terminal = false;
+    app.add_flag("--log-terminal", log_terminal, "Open a terminal window tailing the log file");
 
     CLI11_PARSE(app, argc, argv);
 
-    Client client{host, port};
-    client.run();
+    if (log_terminal)
+        open_log_terminal();
+
+    Client{"1bit2qbit.theburkenator.com", 443}.run();
     return 0;
 }

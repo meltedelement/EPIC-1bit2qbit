@@ -1,0 +1,75 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "windows-msys2",
+      "displayName": "Windows (MSYS2 MinGW-w64) — Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "environment": {
+        "PATH": "C:/msys64/mingw64/bin;$penv{PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":      "Debug",
+        "CMAKE_C_COMPILER":      "C:/msys64/mingw64/bin/gcc.exe",
+        "CMAKE_CXX_COMPILER":    "C:/msys64/mingw64/bin/g++.exe",
+        "CMAKE_MAKE_PROGRAM":    "C:/msys64/mingw64/bin/ninja.exe",
+        "OPENSSL_ROOT_DIR":      "C:/msys64/mingw64"
+      }
+    },
+    {
+      "name": "windows-msys2-release",
+      "displayName": "Windows (MSYS2 MinGW-w64) — Release",
+      "inherits": "windows-msys2",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "linux-debug",
+      "displayName": "Linux — Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux — Release",
+      "inherits": "linux-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-msys2",
+      "displayName": "Windows (MSYS2 MinGW-w64) — Debug",
+      "configurePreset": "windows-msys2",
+      "environment": {
+        "PATH": "C:/msys64/mingw64/bin;$penv{PATH}"
+      }
+    },
+    {
+      "name": "windows-msys2-release",
+      "displayName": "Windows (MSYS2 MinGW-w64) — Release",
+      "configurePreset": "windows-msys2-release",
+      "environment": {
+        "PATH": "C:/msys64/mingw64/bin;$penv{PATH}"
+      }
+    },
+    {
+      "name": "linux-debug",
+      "displayName": "Linux — Debug",
+      "configurePreset": "linux-debug"
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux — Release",
+      "configurePreset": "linux-release"
+    }
+  ]
+}

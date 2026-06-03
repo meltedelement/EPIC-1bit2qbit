@@ -16,7 +16,7 @@ using DisconnectCallback = std::function<void(std::string reason)>;
 // → WebSocket upgrade → framed message I/O.
 class Connection {
 public:
-    Connection(const std::string& host, uint16_t port, const std::string& path = "/");
+    Connection(const std::string& host, uint16_t port, bool tls = true);
     ~Connection();
 
     Connection(const Connection&)            = delete;
@@ -47,6 +47,7 @@ private:
     void tls_handshake(const std::string& pinned_fp);
     void ws_handshake();
     void read_loop();
+    void ping_loop();  // sends a WS ping every 5s; closes socket on write failure
 
     // Raw SSL I/O
     std::string ssl_read_exact(size_t n);
@@ -60,7 +61,7 @@ private:
 
     std::string                       host_;
     uint16_t                          port_;
-    std::string                       path_;
+    bool                              tls_;
     TlsContext                        tls_ctx_;
     boost::asio::io_context           io_ctx_;
     boost::asio::ip::tcp::socket      tcp_sock_;
@@ -71,5 +72,6 @@ private:
     std::atomic<bool>                 connected_{false};
     std::atomic<bool>                 running_{false};
     std::thread                       read_thread_;
+    std::thread                       ping_thread_;
     std::mutex                        write_mutex_;
 };

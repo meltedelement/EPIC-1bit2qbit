@@ -16,6 +16,12 @@ TlsContext::TlsContext() {
         ctx_ = nullptr;
         throw std::runtime_error{"SSL_CTX_set_default_verify_paths failed"};
     }
+
+#ifdef _WIN32
+    // MSYS2 MinGW's OpenSSL compiled-in paths don't match the installed bundle
+    // location. Load it explicitly as a supplement to whatever the default found.
+    SSL_CTX_load_verify_locations(ctx_, "C:/msys64/mingw64/etc/ssl/certs/ca-bundle.crt", nullptr);
+#endif
 }
 
 TlsContext::~TlsContext() {

@@ -3,7 +3,7 @@
 #include <optional>
 #include <string>
 
-constexpr int64_t EDIT_WINDOW_MS = 15LL * 60 * 1000;
+constexpr int64_t EDIT_WINDOW_MS = 10LL * 60 * 1000;  // matches server edit_window_minutes = 10
 
 // Matches subprocess_handler _serialize_ratchet_message
 struct RatchetHeader {
@@ -60,12 +60,18 @@ struct MessageEnvelope {
 // Direction is derived at render time: recipient == local username → received, else sent.
 struct Message {
     uint64_t                id{0};
-    std::string             peer;       // the other party in the conversation
-    std::string             recipient;  // from envelope
+    std::string             peer;            // the other party in the conversation (grouping key)
+    std::string             sender;          // who sent this message
+    std::string             recipient;       // who received this message
     int64_t                 timestamp_ms{0};
     MessageType             type{MessageType::Standard};
     std::string             body;
+    bool                    edited{false};
+    bool                    deleted{false};
     std::optional<uint64_t> target_id;
+    std::string             target_mid;      // mid of the message this Edit/Delete targets
+    std::string             wire_ciphertext; // raw network envelope JSON (for verify)
+    std::string             mid;             // blockchain message ID (sender:recipient:ts)
 };
 
 inline bool is_editable(int64_t message_timestamp_ms, int64_t now_ms) {
