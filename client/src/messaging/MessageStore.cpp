@@ -62,6 +62,7 @@ MessageStore::MessageStore(const std::string& db_path) : db_path_{db_path} {
         throw std::runtime_error(std::string("MessageStore: failed to open database: ") +
                                  sqlite3_errmsg(db_));
     }
+    sqlite3_busy_timeout(db_, 5000);
     exec_or_throw(db_, kSchema);
     // Migrate existing databases: ADD COLUMN is a no-op if the column already
     // exists (SQLite returns an error we intentionally ignore here).

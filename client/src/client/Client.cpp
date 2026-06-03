@@ -2,9 +2,12 @@
 
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <exception>
 #include <stdexcept>
 #include <utility>
+
+#include <sys/stat.h>
 
 #include <openssl/err.h>
 #include <openssl/x509.h>
@@ -21,6 +24,14 @@
 #include "log.h"
 
 namespace {
+
+std::string db_path_for(const std::string& username) {
+    const char* xdg = std::getenv("XDG_DATA_HOME");
+    std::string base = xdg ? xdg : (std::string(std::getenv("HOME")) + "/.local/share");
+    std::string dir  = base + "/epic";
+    mkdir(dir.c_str(), 0700);
+    return dir + "/" + username + ".db";
+}
 
 // ── One-shot HTTPS POST ───────────────────────────────────────────────────────
 // Used for registration (a plain HTTP exchange, not a WebSocket session).
@@ -205,7 +216,7 @@ void Client::do_register(const std::string& username, const std::string& auth_pa
             throw std::runtime_error{"server returned HTTP " + std::to_string(resp.status)};
 
         std::lock_guard<std::mutex> lk(mutex_);
-        store_ = std::make_unique<MessageStore>(username + ".db");
+        store_ = std::make_unique<MessageStore>(db_path_for(username));
         encrypted_dek_   = crypto_->create_dek(key_pin, username).at("encrypted_dek");
         encrypted_state_ = crypto_->create_state().at("encrypted_state");
         current_user_    = username;
@@ -234,7 +245,7 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
                       const std::string& key_pin) {
     epic_log("do_login: user=" + username);
     try {
-        store_ = std::make_unique<MessageStore>(username + ".db");
+        store_ = std::make_unique<MessageStore>(db_path_for(username));
 
         // Load the persisted DEK blob if we don't have it in memory already.
         if (encrypted_dek_.is_null()) {
