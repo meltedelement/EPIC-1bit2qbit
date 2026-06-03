@@ -258,30 +258,6 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
                 encrypted_state_ = nlohmann::json::parse(*stored);
         }
 
-        // Restore conversation history — populate both the Client's crypto map
-        // (needed for ratchet state on inbound messages) and the UI.
-        {
-            std::vector<Conversation> convs;
-            std::lock_guard<std::mutex> lk(mutex_);
-            for (const auto& peer : store_->list_peers()) {
-                if (auto raw = store_->load_conversation(peer)) {
-                    Conversation conv{peer};
-                    conv.set_ratchet_state(storage_decrypt(raw->ratchet_state()));
-                    conv.set_associated_data(storage_decrypt(raw->associated_data()));
-                    conv.set_pinned_ik_pub(raw->pinned_ik_pub());
-                    for (const auto& msg : raw->messages()) {
-                        Message m = msg;
-                        m.body = storage_decrypt(m.body);
-                        conv.add_message(std::move(m));
-                    }
-                    conversations_.insert_or_assign(peer, conv);
-                    convs.push_back(std::move(conv));
-                }
-            }
-            if (!convs.empty())
-                app_->set_conversations(std::move(convs));
-        }
-
         current_user_  = username;
         auth_password_ = auth_password;
         reconnect_attempt_ = 0;
@@ -294,8 +270,15 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
             epic_log("on_disconnect: " + reason);
             app_->set_connected(false);
             if (reason.find("4001") != std::string::npos) {
-                current_user_.clear();
-                auth_password_.clear();
+                {
+                    std::lock_guard<std::mutex> lk(mutex_);
+                    current_user_.clear();
+                    auth_password_.clear();
+                    encrypted_dek_   = nlohmann::json{};
+                    encrypted_state_ = nlohmann::json{};
+                    store_.reset();
+                    pin_fail_count_ = 0;
+                }
                 app_->push_status("Incorrect password.");
                 app_->return_to_login();
                 return;
@@ -550,7 +533,32 @@ void Client::handle_ws_frame(const std::string& json_frame) {
     epic_log("handle_ws_frame: type=" + type);
     if (frame.contains("username") && !frame.contains("type")) {
         // Auth confirmation: server echoes {"username":"..."} on successful login.
+        // Only now do we decrypt and load conversations — plaintext never enters
+        // memory until the server has validated the password.
         if (frame.value("username", std::string{}) == current_user_) {
+            {
+                std::vector<Conversation> convs;
+                std::lock_guard<std::mutex> lk(mutex_);
+                if (store_) {
+                    for (const auto& peer : store_->list_peers()) {
+                        if (auto raw = store_->load_conversation(peer)) {
+                            Conversation conv{peer};
+                            conv.set_ratchet_state(storage_decrypt(raw->ratchet_state()));
+                            conv.set_associated_data(storage_decrypt(raw->associated_data()));
+                            conv.set_pinned_ik_pub(raw->pinned_ik_pub());
+                            for (const auto& msg : raw->messages()) {
+                                Message m = msg;
+                                m.body = storage_decrypt(m.body);
+                                conv.add_message(std::move(m));
+                            }
+                            conversations_.insert_or_assign(peer, conv);
+                            convs.push_back(std::move(conv));
+                        }
+                    }
+                }
+                if (!convs.empty())
+                    app_->set_conversations(std::move(convs));
+            }
             publish_key_bundle();
             app_->set_connected(true);
             app_->advance_to_chat(current_user_);
