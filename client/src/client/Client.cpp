@@ -212,11 +212,12 @@ void Client::do_register(const std::string& username, const std::string& auth_pa
             throw std::runtime_error{"username already taken"};
         if (resp.status != 201)
             throw std::runtime_error{"server returned HTTP " + std::to_string(resp.status)};
-
-        app_->push_status("Registered '" + username + "' — log in to open a session.");
     } catch (const std::exception& e) {
         app_->push_status(std::string("Registration failed: ") + e.what());
+        return;
     }
+
+    do_login(username, auth_password, key_pin);
 }
 
 void Client::do_login(const std::string& username, const std::string& auth_password,
