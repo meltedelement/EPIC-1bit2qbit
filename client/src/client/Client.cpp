@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include <climits>
 #include <sys/stat.h>
 
 #include <openssl/err.h>
@@ -24,6 +25,16 @@
 #include "log.h"
 
 namespace {
+
+std::string bin_dir() {
+    char buf[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (len <= 0) return ".";
+    buf[len] = '\0';
+    std::string path(buf);
+    auto slash = path.rfind('/');
+    return slash == std::string::npos ? "." : path.substr(0, slash);
+}
 
 std::string db_path_for(const std::string& username) {
     const char* xdg = std::getenv("XDG_DATA_HOME");
@@ -183,11 +194,7 @@ void Client::run() {
     cbs.on_logout   = [this] { do_logout(); };
     app_ = std::make_unique<App>(std::move(cbs));
 
-    // Spawn client/subprocess_handler.py with its stdin/stdout piped to us. The
-    // script path is resolved relative to the subprocess's working directory, so
-    // epic-client must be launched from the client/ directory (or the default
-    // path adjusted) for the crypto_functions package to import.
-    crypto_->start();
+    crypto_->start(bin_dir() + "/../subprocess_handler.py");
 
     app_->run();  // blocking TUI loop; returns when the user quits
 
