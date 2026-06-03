@@ -214,7 +214,8 @@ void Client::run() {
     cbs.on_logout   = [this] { do_logout(); };
     app_ = std::make_unique<App>(std::move(cbs));
 
-    crypto_->start((bin_dir() / ".." / "subprocess_handler.py").string());
+    crypto_->start(std::filesystem::weakly_canonical(
+        bin_dir() / ".." / "subprocess_handler.py").string());
 
     app_->run();  // blocking TUI loop; returns when the user quits
 

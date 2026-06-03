@@ -71,7 +71,9 @@ void CryptoProxy::start(const std::string& script_path, const std::string& pytho
     si.dwFlags    = STARTF_USESTDHANDLES;
 
     // CreateProcessA requires a mutable command-line buffer.
-    std::string       cmd_str = python_exe + " " + script_path;
+    // Quote the script path so spaces in directory names (e.g. "Year 2 projects")
+    // are not split into separate arguments by the Win32 command-line parser.
+    std::string       cmd_str = python_exe + " \"" + script_path + "\"";
     std::vector<char> cmd_buf(cmd_str.begin(), cmd_str.end());
     cmd_buf.push_back('\0');
 
