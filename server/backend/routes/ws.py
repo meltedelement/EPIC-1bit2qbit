@@ -5,7 +5,9 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import TypeAdapter, ValidationError
 
 from ..auth.credentials import verify_credentials
+from ..config.config import config
 from ..handlers import WsContext, key_bundle, messaging
+from ..rate_limit import RateLimiter, client_ip
 from ..schemas.http import LoginFrame
 from ..schemas.ws import ErrorFrame, InboundFrame
 from ..session import SessionRegistry
@@ -21,6 +23,15 @@ _frame_adapter: TypeAdapter[InboundFrame] = TypeAdapter(InboundFrame)
 
 async def _authenticate(websocket: WebSocket) -> str | None:
     """Read first frame and return username on success, or close and return None."""
+    limiter: RateLimiter = websocket.app.state.rate_limiter
+    ip = client_ip(websocket.headers, websocket.client)
+    rl = config.rate_limiting
+
+    retry = limiter.is_blocked(ip, rl.ws_auth_fail_limit, rl.ws_auth_fail_window_seconds)
+    if retry:
+        await websocket.close(code=4004, reason=f"rate limited: retry after {retry}s")
+        return None
+
     try:
         raw = await websocket.receive_text()
     except WebSocketDisconnect:
@@ -34,6 +45,7 @@ async def _authenticate(websocket: WebSocket) -> str | None:
 
     ok = await asyncio.to_thread(verify_credentials, frame.username, frame.password)
     if not ok:
+        limiter.hit(ip, rl.ws_auth_fail_limit, rl.ws_auth_fail_window_seconds)
         await websocket.close(code=4001, reason="authentication failed")
         return None
 
