@@ -306,6 +306,24 @@ def _handle_decrypt_message(p: dict) -> dict:
     return {"plaintext": _b64(plaintext), "ratchet_state": dr.json}
 
 
+# Storage encryption — AES-256-GCM under the active DEK, for persisting
+# sensitive fields (message bodies, ratchet state, associated data) to SQLite.
+_STORAGE_AAD = b"EPIC_STORAGE"
+
+
+def _handle_encrypt_with_dek(p: dict) -> dict:
+    dek = _require_dek()
+    nonce = os.urandom(_NONCE_LEN)
+    ciphertext = AESGCM(dek).encrypt(nonce, _unb64(p["plaintext"]), _STORAGE_AAD)
+    return {"nonce": _b64(nonce), "ciphertext": _b64(ciphertext)}
+
+
+def _handle_decrypt_with_dek(p: dict) -> dict:
+    dek = _require_dek()
+    plaintext = AESGCM(dek).decrypt(_unb64(p["nonce"]), _unb64(p["ciphertext"]), _STORAGE_AAD)
+    return {"plaintext": _b64(plaintext)}
+
+
 # Dispatch table and main loop
 _DISPATCH: dict[str, callable] = {
     "create_dek": _handle_create_dek,
@@ -323,6 +341,8 @@ _DISPATCH: dict[str, callable] = {
     "decrypt_initial_message": _handle_decrypt_initial_message,
     "encrypt_message": _handle_encrypt_message,
     "decrypt_message": _handle_decrypt_message,
+    "encrypt_with_dek": _handle_encrypt_with_dek,
+    "decrypt_with_dek": _handle_decrypt_with_dek,
 }
 
 

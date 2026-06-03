@@ -64,6 +64,13 @@ private:
                                    const nlohmann::json* x3dh_header);
     std::string new_mid(const std::string& recipient) const;
 
+    // Encrypt/decrypt a string for local DB storage using the DEK.
+    // Must be called with mutex_ held (uses crypto_).
+    // decrypt_from_storage gracefully returns the input unchanged if it is not
+    // an encrypted blob, so existing plaintext rows survive a DB migration.
+    std::string storage_encrypt(const std::string& plaintext);
+    std::string storage_decrypt(const std::string& data);
+
     std::string                    host_;
     uint16_t                       port_;
     std::string                    current_user_;
@@ -79,19 +86,19 @@ private:
 
     // The DEK is never held in C++ — the crypto subprocess keeps the raw key in
     // memory after create/unlock. We only retain the encrypted_dek blob
-    // ({salt, nonce, ciphertext}) needed to unlock it again.
-    // TODO(persistence): this belongs in MessageStore / the local key store so it
-    // survives across runs; for now it lives only for the session.
+    // ({salt, nonce, ciphertext}) needed to unlock it again; it is persisted in
+    // MessageStore's key_store (save_dek/load_dek) and survives across runs.
     nlohmann::json                 encrypted_dek_;
 
     // DEK-wrapped X3DH state (own identity key, signed pre-key, one-time pre-keys).
     // Created at registration, published over WS after login, and consumed when
-    // establishing sessions. Opaque to C++. TODO(persistence): also session-only.
+    // establishing sessions. Opaque to C++. Persisted via MessageStore
+    // (save_encrypted_state/load_encrypted_state).
     nlohmann::json                 encrypted_state_;
 
     // Server TLS certificate fingerprint, pinned on first connect (TOFU). Empty
-    // until the first handshake. TODO(persistence): MessageStore has no server-cert
-    // slot yet, so this only pins for the lifetime of the process.
+    // until the first handshake, then persisted per-host in MessageStore
+    // (save_server_cert/load_server_cert) so the pin survives restarts.
     std::string                    server_cert_pin_;
 
     // mutex_ guards crypto_ access (the subprocess is single-threaded and the

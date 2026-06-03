@@ -29,13 +29,15 @@ Stmt prepare(sqlite3* db, const char* sql) {
 
 static constexpr const char* kSchema = R"(
     CREATE TABLE IF NOT EXISTS messages (
-        id           INTEGER PRIMARY KEY,
-        peer         TEXT    NOT NULL,
-        recipient    TEXT    NOT NULL,
-        timestamp_ms INTEGER NOT NULL,
-        type         INTEGER NOT NULL DEFAULT 0,
-        body         TEXT    NOT NULL DEFAULT '',
-        target_id    INTEGER
+        id               INTEGER PRIMARY KEY,
+        peer             TEXT    NOT NULL,
+        recipient        TEXT    NOT NULL,
+        timestamp_ms     INTEGER NOT NULL,
+        type             INTEGER NOT NULL DEFAULT 0,
+        body             TEXT    NOT NULL DEFAULT '',
+        edited           INTEGER NOT NULL DEFAULT 0,
+        target_id        INTEGER,
+        wire_ciphertext  TEXT    NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS conversations (
         peer             TEXT PRIMARY KEY,
@@ -58,6 +60,14 @@ MessageStore::MessageStore(const std::string& db_path) : db_path_{db_path} {
                                  sqlite3_errmsg(db_));
     }
     exec_or_throw(db_, kSchema);
+    // Migrate existing databases: ADD COLUMN is a no-op if the column already
+    // exists (SQLite returns an error we intentionally ignore here).
+    sqlite3_exec(db_,
+        "ALTER TABLE messages ADD COLUMN wire_ciphertext TEXT NOT NULL DEFAULT ''",
+        nullptr, nullptr, nullptr);
+    sqlite3_exec(db_,
+        "ALTER TABLE messages ADD COLUMN edited INTEGER NOT NULL DEFAULT 0",
+        nullptr, nullptr, nullptr);
 }
 
 MessageStore::~MessageStore() {
@@ -67,30 +77,47 @@ MessageStore::~MessageStore() {
     }
 }
 
-void MessageStore::save_message(const Message& msg) {
+uint64_t MessageStore::save_message(const Message& msg) {
     auto stmt = prepare(db_, R"(
-        INSERT OR REPLACE INTO messages (id, peer, recipient, timestamp_ms, type, body, target_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO messages
+            (id, peer, recipient, timestamp_ms, type, body, edited, target_id, wire_ciphertext)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     )");
     if (msg.id == 0)
         sqlite3_bind_null(stmt.s, 1);
     else
         sqlite3_bind_int64(stmt.s, 1, static_cast<sqlite3_int64>(msg.id));
-    sqlite3_bind_text (stmt.s, 2, msg.peer.c_str(),      -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text (stmt.s, 3, msg.recipient.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text (stmt.s, 2, msg.peer.c_str(),             -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text (stmt.s, 3, msg.recipient.c_str(),        -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt.s, 4, msg.timestamp_ms);
     sqlite3_bind_int  (stmt.s, 5, static_cast<int>(msg.type));
-    sqlite3_bind_text (stmt.s, 6, msg.body.c_str(),      -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text (stmt.s, 6, msg.body.c_str(),             -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int  (stmt.s, 7, msg.edited ? 1 : 0);
     if (msg.target_id.has_value())
-        sqlite3_bind_int64(stmt.s, 7, static_cast<sqlite3_int64>(*msg.target_id));
+        sqlite3_bind_int64(stmt.s, 8, static_cast<sqlite3_int64>(*msg.target_id));
     else
-        sqlite3_bind_null(stmt.s, 7);
+        sqlite3_bind_null(stmt.s, 8);
+    sqlite3_bind_text(stmt.s, 9, msg.wire_ciphertext.c_str(),   -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt.s);
+    return static_cast<uint64_t>(sqlite3_last_insert_rowid(db_));
+}
+
+void MessageStore::delete_message(uint64_t id) {
+    auto stmt = prepare(db_, "DELETE FROM messages WHERE id = ?");
+    sqlite3_bind_int64(stmt.s, 1, static_cast<sqlite3_int64>(id));
+    sqlite3_step(stmt.s);
+}
+
+void MessageStore::update_message_body(uint64_t id, const std::string& encrypted_body) {
+    auto stmt = prepare(db_, "UPDATE messages SET body = ?, edited = 1 WHERE id = ?");
+    sqlite3_bind_text (stmt.s, 1, encrypted_body.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt.s, 2, static_cast<sqlite3_int64>(id));
     sqlite3_step(stmt.s);
 }
 
 std::optional<Conversation> MessageStore::load_conversation(const std::string& peer) const {
     auto stmt = prepare(db_, R"(
-        SELECT id, peer, recipient, timestamp_ms, type, body, target_id
+        SELECT id, peer, recipient, timestamp_ms, type, body, edited, target_id, wire_ciphertext
         FROM messages WHERE peer = ? ORDER BY timestamp_ms
     )");
     sqlite3_bind_text(stmt.s, 1, peer.c_str(), -1, SQLITE_TRANSIENT);
@@ -100,14 +127,17 @@ std::optional<Conversation> MessageStore::load_conversation(const std::string& p
     while (sqlite3_step(stmt.s) == SQLITE_ROW) {
         found = true;
         Message m;
-        m.id           = static_cast<uint64_t>(sqlite3_column_int64(stmt.s, 0));
-        m.peer         = reinterpret_cast<const char*>(sqlite3_column_text(stmt.s, 1));
-        m.recipient    = reinterpret_cast<const char*>(sqlite3_column_text(stmt.s, 2));
-        m.timestamp_ms = sqlite3_column_int64(stmt.s, 3);
-        m.type         = static_cast<MessageType>(sqlite3_column_int(stmt.s, 4));
-        m.body         = reinterpret_cast<const char*>(sqlite3_column_text(stmt.s, 5));
-        if (sqlite3_column_type(stmt.s, 6) != SQLITE_NULL)
-            m.target_id = static_cast<uint64_t>(sqlite3_column_int64(stmt.s, 6));
+        m.id              = static_cast<uint64_t>(sqlite3_column_int64(stmt.s, 0));
+        m.peer            = reinterpret_cast<const char*>(sqlite3_column_text(stmt.s, 1));
+        m.recipient       = reinterpret_cast<const char*>(sqlite3_column_text(stmt.s, 2));
+        m.timestamp_ms    = sqlite3_column_int64(stmt.s, 3);
+        m.type            = static_cast<MessageType>(sqlite3_column_int(stmt.s, 4));
+        m.body            = reinterpret_cast<const char*>(sqlite3_column_text(stmt.s, 5));
+        m.edited          = sqlite3_column_int(stmt.s, 6) != 0;
+        if (sqlite3_column_type(stmt.s, 7) != SQLITE_NULL)
+            m.target_id   = static_cast<uint64_t>(sqlite3_column_int64(stmt.s, 7));
+        if (auto* wc = sqlite3_column_text(stmt.s, 8))
+            m.wire_ciphertext = reinterpret_cast<const char*>(wc);
         conv.add_message(std::move(m));
     }
     if (!found) return std::nullopt;
@@ -210,6 +240,25 @@ std::optional<std::string> MessageStore::load_encrypted_state(const std::string&
     auto stmt = prepare(db_,
         "SELECT value FROM key_store WHERE key = ?");
     const std::string key = "state:" + username;
+    sqlite3_bind_text(stmt.s, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt.s) == SQLITE_ROW)
+        return reinterpret_cast<const char*>(sqlite3_column_text(stmt.s, 0));
+    return std::nullopt;
+}
+
+void MessageStore::save_server_cert(const std::string& host, const std::string& fingerprint) {
+    auto stmt = prepare(db_,
+        "INSERT OR REPLACE INTO key_store (key, value) VALUES (?, ?)");
+    const std::string key = "cert:" + host;
+    sqlite3_bind_text(stmt.s, 1, key.c_str(),         -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.s, 2, fingerprint.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt.s);
+}
+
+std::optional<std::string> MessageStore::load_server_cert(const std::string& host) const {
+    auto stmt = prepare(db_,
+        "SELECT value FROM key_store WHERE key = ?");
+    const std::string key = "cert:" + host;
     sqlite3_bind_text(stmt.s, 1, key.c_str(), -1, SQLITE_TRANSIENT);
     if (sqlite3_step(stmt.s) == SQLITE_ROW)
         return reinterpret_cast<const char*>(sqlite3_column_text(stmt.s, 0));

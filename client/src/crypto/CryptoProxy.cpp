@@ -433,3 +433,12 @@ nlohmann::json CryptoProxy::decrypt_message(const nlohmann::json& ratchet_state,
                                     {"encrypted_message", encrypted_message},
                                     {"associated_data", associated_data}});
 }
+
+nlohmann::json CryptoProxy::encrypt_for_storage(const std::string& plaintext_b64) {
+    return call("encrypt_with_dek", {{"plaintext", plaintext_b64}});
+}
+
+nlohmann::json CryptoProxy::decrypt_from_storage(const nlohmann::json& encrypted) {
+    return call("decrypt_with_dek", {{"nonce",       encrypted.at("nonce")},
+                                     {"ciphertext",  encrypted.at("ciphertext")}});
+}

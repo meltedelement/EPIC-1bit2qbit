@@ -1,5 +1,6 @@
 #include "ui/App.h"
 #include "log.h"
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -67,48 +68,54 @@ void App::push_status(std::string msg) {
     }
 }
 
-void App::push_message(const std::string& sender, const std::string& body) {
-    auto update = [this, sender, body] {
+void App::push_message(const Message& msg) {
+    auto update = [this, msg] {
         auto it = std::find_if(conversations_.begin(), conversations_.end(),
-                               [&](const Conversation& c) { return c.peer() == sender; });
+                               [&](const Conversation& c) { return c.peer() == msg.peer; });
         if (it == conversations_.end()) {
-            conversations_.emplace_back(Conversation{sender});
-            conv_names_.push_back(sender);
+            conversations_.emplace_back(Conversation{msg.peer});
+            conv_names_.push_back(msg.peer);
             it = conversations_.end() - 1;
         }
-        Message m;
-        m.peer         = sender;
-        m.recipient    = local_username_;
-        m.timestamp_ms = now_ms();
-        m.body         = body;
-        it->add_message(std::move(m));
+        it->add_message(msg);
     };
-    if (screen_ptr_)
-        screen_ptr_->Post(update);
-    else
-        update();
+    if (screen_ptr_) screen_ptr_->Post(update);
+    else             update();
 }
 
-void App::push_sent_message(const std::string& recipient, const std::string& body) {
-    auto update = [this, recipient, body] {
+void App::push_sent_message(const Message& msg) {
+    auto update = [this, msg] {
         auto it = std::find_if(conversations_.begin(), conversations_.end(),
-                               [&](const Conversation& c) { return c.peer() == recipient; });
+                               [&](const Conversation& c) { return c.peer() == msg.peer; });
         if (it == conversations_.end()) {
-            conversations_.emplace_back(Conversation{recipient});
-            conv_names_.push_back(recipient);
+            conversations_.emplace_back(Conversation{msg.peer});
+            conv_names_.push_back(msg.peer);
             it = conversations_.end() - 1;
         }
-        Message m;
-        m.peer         = recipient;
-        m.recipient    = recipient;  // recipient != local_username_ → renders as "you"
-        m.timestamp_ms = now_ms();
-        m.body         = body;
-        it->add_message(std::move(m));
+        it->add_message(msg);
     };
-    if (screen_ptr_)
-        screen_ptr_->Post(update);
-    else
-        update();
+    if (screen_ptr_) screen_ptr_->Post(update);
+    else             update();
+}
+
+void App::update_message_body(uint64_t id, const std::string& new_body) {
+    auto update = [this, id, new_body] {
+        for (auto& conv : conversations_)
+            conv.update_message_body(id, new_body);
+    };
+    if (screen_ptr_) screen_ptr_->Post(update);
+    else             update();
+}
+
+void App::remove_message(uint64_t id) {
+    auto update = [this, id] {
+        for (auto& conv : conversations_)
+            conv.remove_message(id);
+        selected_msg_      = -1;
+        msg_options_open_  = false;
+    };
+    if (screen_ptr_) screen_ptr_->Post(update);
+    else             update();
 }
 
 void App::set_conversations(std::vector<Conversation> convs) {
@@ -288,30 +295,67 @@ void App::run() {
     auto left_panel   = Container::Vertical({conv_menu,
                                              Container::Horizontal({new_peer_input, new_conv_btn})});
 
+    // compose_text_ serves three modes depending on editing_msg_ / forwarding_msg_:
+    //   normal      → body of new message to send
+    //   editing     → new body for the selected message
+    //   forwarding  → recipient to forward to (body saved in forwarding_body_)
     auto do_send = [&] {
         if (compose_text_.empty()) return;
-        if (cbs_.on_send) {
-            if (conversations_.empty()) return;
-            cbs_.on_send(conversations_[selected_conv_].peer(), compose_text_);
-            compose_text_.clear();
+        if (editing_msg_) {
+            if (cbs_.on_edit) cbs_.on_edit(editing_msg_id_, compose_text_);
+            compose_text_     = "";
+            editing_msg_      = false;
+            editing_msg_id_   = 0;
+            selected_msg_     = -1;
+            msg_options_open_ = false;
+        } else if (forwarding_msg_) {
+            if (cbs_.on_forward) cbs_.on_forward(compose_text_, forwarding_body_);
+            else if (cbs_.on_send) cbs_.on_send(compose_text_, forwarding_body_);
+            compose_text_     = "";
+            forwarding_msg_   = false;
+            forwarding_body_  = "";
+            selected_msg_     = -1;
+            msg_options_open_ = false;
         } else {
-            // Placeholder: append directly without encryption.
-            if (conversations_.empty()) return;
-            Message m;
-            m.id           = static_cast<uint64_t>(now_ms());
-            m.peer         = conversations_[selected_conv_].peer();
-            m.recipient    = m.peer;
-            m.timestamp_ms = now_ms();
-            m.type         = MessageType::Standard;
-            m.body         = compose_text_;
-            conversations_[selected_conv_].add_message(std::move(m));
-            compose_text_.clear();
+            if (cbs_.on_send) {
+                if (conversations_.empty()) return;
+                cbs_.on_send(conversations_[selected_conv_].peer(), compose_text_);
+                compose_text_.clear();
+            } else {
+                if (conversations_.empty()) return;
+                Message m;
+                m.id           = static_cast<uint64_t>(now_ms());
+                m.peer         = conversations_[selected_conv_].peer();
+                m.recipient    = m.peer;
+                m.timestamp_ms = now_ms();
+                m.type         = MessageType::Standard;
+                m.body         = compose_text_;
+                conversations_[selected_conv_].add_message(std::move(m));
+                compose_text_.clear();
+            }
         }
     };
 
     auto compose_input = Input(&compose_text_, "Type a message...");
     compose_input = CatchEvent(compose_input, [&](Event e) {
         if (e == Event::Return) { do_send(); return true; }
+        if (e == Event::Escape && (editing_msg_ || forwarding_msg_)) {
+            compose_text_    = "";
+            editing_msg_     = false;
+            forwarding_msg_  = false;
+            editing_msg_id_  = 0;
+            forwarding_body_ = "";
+            return true;
+        }
+        if (e == Event::ArrowUp && compose_text_.empty() &&
+                !editing_msg_ && !forwarding_msg_ && !conversations_.empty()) {
+            const auto& msgs = conversations_[selected_conv_].messages();
+            if (!msgs.empty()) {
+                selected_msg_     = static_cast<int>(msgs.size()) - 1;
+                msg_options_open_ = false;
+            }
+            return true;
+        }
         return false;
     });
 
@@ -326,18 +370,124 @@ void App::run() {
     auto chat_panels    = Container::Horizontal({left_panel, chat_right});
     auto chat_layout    = Container::Vertical({logout_btn, chat_panels});
 
+    // Key navigation and options key-bindings for the whole chat area
+    chat_layout = CatchEvent(chat_layout, [&](Event e) {
+        if (conversations_.empty()) return false;
+        const auto& msgs = conversations_[selected_conv_].messages();
+        if (msgs.empty() || selected_msg_ < 0) return false;
+
+        // Arrow navigation (only when not in edit/forward text mode)
+        if (!editing_msg_ && !forwarding_msg_) {
+            if (e == Event::ArrowUp) {
+                selected_msg_ = std::max(0, selected_msg_ - 1);
+                msg_options_open_ = false;
+                return true;
+            }
+            if (e == Event::ArrowDown) {
+                int last = static_cast<int>(msgs.size()) - 1;
+                selected_msg_     = (selected_msg_ >= last) ? -1 : selected_msg_ + 1;
+                msg_options_open_ = false;
+                return true;
+            }
+            if (e == Event::Return) {
+                msg_options_open_ = !msg_options_open_;
+                return true;
+            }
+        }
+
+        if (e == Event::Escape) {
+            msg_options_open_ = false;
+            selected_msg_     = -1;
+            editing_msg_      = false;
+            forwarding_msg_   = false;
+            compose_text_     = "";
+            editing_msg_id_   = 0;
+            forwarding_body_  = "";
+            return true;
+        }
+
+        // Option key-bindings (only when options menu is open)
+        if (!msg_options_open_) return false;
+        if (selected_msg_ >= static_cast<int>(msgs.size())) return false;
+        const auto& sel  = msgs[selected_msg_];
+        bool is_sent     = (sel.recipient != local_username_);
+
+        if (e.is_character()) {
+            char c = e.character().empty() ? '\0' : e.character()[0];
+            if (c == 'e' || c == 'E') {
+                if (is_sent) {
+                    compose_text_   = sel.body;
+                    editing_msg_    = true;
+                    editing_msg_id_ = sel.id;
+                    msg_options_open_ = false;
+                }
+                return true;
+            }
+            if (c == 'd' || c == 'D') {
+                if (is_sent && cbs_.on_delete) cbs_.on_delete(sel.id, false);
+                msg_options_open_ = false;
+                return true;
+            }
+            if (c == 'f' || c == 'F') {
+                forwarding_body_  = sel.body;
+                forwarding_msg_   = true;
+                compose_text_     = "";
+                msg_options_open_ = false;
+                return true;
+            }
+            if (c == 'v' || c == 'V') {
+                std::string ct;
+                try {
+                    const auto env = nlohmann::json::parse(sel.wire_ciphertext);
+                    ct = env.at("dr").at("ciphertext").get<std::string>();
+                } catch (...) {}
+                if (!ct.empty()) {
+                    std::string encoded;
+                    for (unsigned char uc : ct) {
+                        if (std::isalnum(uc) || uc=='-'||uc=='_'||uc=='.'||uc=='~')
+                            encoded += static_cast<char>(uc);
+                        else {
+                            char buf[4];
+                            std::snprintf(buf, sizeof(buf), "%%%02X", uc);
+                            encoded += buf;
+                        }
+                    }
+                    std::string url = "https://1bit2qbit.theburkenator.com/verify/?message=" + encoded;
+#ifdef _WIN32
+                    ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#else
+                    std::system(("xdg-open '" + url + "' &").c_str());
+#endif
+                } else {
+                    push_status("No ciphertext stored for this message.");
+                }
+                msg_options_open_ = false;
+                return true;
+            }
+        }
+        return false;
+    });
+
     auto chat_renderer = Renderer(chat_layout, [&]() -> Element {
+        // ── Message list ──────────────────────────────────────────────────────
         Elements msg_els;
         if (!conversations_.empty()) {
-            for (const auto& m : conversations_[selected_conv_].messages()) {
-                bool sent = (m.recipient != local_username_);
+            const auto& msgs = conversations_[selected_conv_].messages();
+            for (int i = 0; i < static_cast<int>(msgs.size()); ++i) {
+                const auto& m = msgs[i];
+                bool sent     = (m.recipient != local_username_);
+                bool sel      = (i == selected_msg_);
                 std::string label = sent
                     ? "[" + format_time(m.timestamp_ms) + "] you : "
                     : "[" + format_time(m.timestamp_ms) + "] " + m.peer + " : ";
-                msg_els.push_back(hbox({
+                auto row = hbox({
+                    text(sel ? " > " : "   "),
                     text(label) | (sent ? color(Color::Blue) : color(Color::White)),
                     text(m.body) | flex,
-                }));
+                    m.edited ? text(" (edited)") | dim : text(""),
+                });
+                if (sel) row = row | inverted;
+                msg_els.push_back(row);
             }
             if (!msg_els.empty())
                 msg_els.back() = msg_els.back() | focus;
@@ -345,6 +495,27 @@ void App::run() {
                 msg_els.push_back(text("No messages yet.") | dim | center);
         } else {
             msg_els.push_back(text("No messages yet.") | dim | center);
+        }
+
+        // ── Action / hint bar ─────────────────────────────────────────────────
+        Element action_bar = text("");
+        if (editing_msg_) {
+            action_bar = text(" Editing — [Enter]=confirm  [Esc]=cancel") | color(Color::Yellow);
+        } else if (forwarding_msg_) {
+            action_bar = text(" Forward to (type recipient, Enter to send, Esc to cancel)") | color(Color::Yellow);
+        } else if (selected_msg_ >= 0 && !conversations_.empty()) {
+            const auto& msgs = conversations_[selected_conv_].messages();
+            if (selected_msg_ < static_cast<int>(msgs.size())) {
+                bool is_sent = (msgs[selected_msg_].recipient != local_username_);
+                if (msg_options_open_) {
+                    std::string hint = " Options:";
+                    if (is_sent) hint += "  [E]dit  [D]elete";
+                    hint += "  [F]orward  [V]erify  [Esc]=close";
+                    action_bar = text(hint) | color(Color::Yellow);
+                } else {
+                    action_bar = text(" [Enter]=options  [↑↓]=navigate  [Esc]=deselect") | dim;
+                }
+            }
         }
 
         const std::string peer_title = conversations_.empty()
@@ -360,6 +531,17 @@ void App::run() {
         header_els.push_back(filler());
         header_els.push_back(text(" " + local_username_ + " ") | bold);
         header_els.push_back(logout_btn->Render());
+
+        // ── Compose bar ───────────────────────────────────────────────────────
+        std::string compose_label = editing_msg_     ? " Edit > "
+                                  : forwarding_msg_  ? " Fwd to > "
+                                  :                    " > ";
+        Element compose_bar = hbox({
+            text(compose_label) | (editing_msg_ || forwarding_msg_ ? color(Color::Yellow) : color(Color::White)),
+            compose_input->Render() | flex,
+            text(" "),
+            send_btn->Render(),
+        });
 
         return vbox({
             hbox(std::move(header_els)),
@@ -380,12 +562,9 @@ void App::run() {
                     separator(),
                     yframe(vbox(msg_els)) | flex,
                     separator(),
-                    hbox({
-                        text(" > "),
-                        compose_input->Render() | flex,
-                        text(" "),
-                        send_btn->Render(),
-                    }),
+                    action_bar,
+                    separator(),
+                    compose_bar,
                 }) | border | flex,
             }) | flex,
         });

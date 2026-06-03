@@ -17,7 +17,9 @@ public:
     MessageStore& operator=(const MessageStore&) = delete;
 
     // ── Messages ───────────────────────────────────────────────────────────────
-    void save_message(const Message& msg);
+    uint64_t save_message(const Message& msg);   // returns DB-assigned rowid
+    void     delete_message(uint64_t id);
+    void     update_message_body(uint64_t id, const std::string& encrypted_body);
     std::optional<Conversation> load_conversation(const std::string& peer) const;
     std::vector<std::string>    list_peers() const;
 
@@ -35,6 +37,10 @@ public:
 
     void save_encrypted_state(const std::string& username, const std::string& state_json);
     std::optional<std::string> load_encrypted_state(const std::string& username) const;
+
+    // ── TOFU server-cert pin ───────────────────────────────────────────────────
+    void save_server_cert(const std::string& host, const std::string& fingerprint);
+    std::optional<std::string> load_server_cert(const std::string& host) const;
 
 private:
     std::string db_path_;

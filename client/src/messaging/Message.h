@@ -60,12 +60,14 @@ struct MessageEnvelope {
 // Direction is derived at render time: recipient == local username → received, else sent.
 struct Message {
     uint64_t                id{0};
-    std::string             peer;       // the other party in the conversation
-    std::string             recipient;  // from envelope
+    std::string             peer;            // the other party in the conversation
+    std::string             recipient;       // from envelope
     int64_t                 timestamp_ms{0};
     MessageType             type{MessageType::Standard};
     std::string             body;
+    bool                    edited{false};
     std::optional<uint64_t> target_id;
+    std::string             wire_ciphertext; // raw network envelope JSON (for verify)
 };
 
 inline bool is_editable(int64_t message_timestamp_ms, int64_t now_ms) {
