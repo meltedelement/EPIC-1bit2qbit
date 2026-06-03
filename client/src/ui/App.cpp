@@ -624,7 +624,7 @@ void App::run() {
     std::atomic<bool> running{true};
     std::thread refresh_thread([&] {
         while (running.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             if (running.load())
                 screen.PostEvent(Event::Custom);
         }
