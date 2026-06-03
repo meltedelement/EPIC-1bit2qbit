@@ -156,8 +156,15 @@ void App::set_conversations(std::vector<Conversation> convs) {
 }
 
 void App::advance_to_chat(std::string username) {
-    local_username_ = std::move(username);
-    active_screen_ = 1;
+    if (screen_ptr_) {
+        screen_ptr_->Post([this, u = std::move(username)]() mutable {
+            local_username_ = std::move(u);
+            active_screen_ = 1;
+        });
+    } else {
+        local_username_ = std::move(username);
+        active_screen_ = 1;
+    }
 }
 
 void App::return_to_login() {

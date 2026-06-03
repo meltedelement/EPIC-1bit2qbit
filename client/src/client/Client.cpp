@@ -197,21 +197,20 @@ void Client::do_register(const std::string& username, const std::string& auth_pa
         return;
     }
     try {
-        std::lock_guard<std::mutex> lk(mutex_);
-        store_ = std::make_unique<MessageStore>(username + ".db");
-
-        encrypted_dek_   = crypto_->create_dek(key_pin, username).at("encrypted_dek");
-        encrypted_state_ = crypto_->create_state().at("encrypted_state");
-        current_user_    = username;
-        store_->save_dek(username, encrypted_dek_.dump());
-        store_->save_encrypted_state(username, encrypted_state_.dump());
-
         const nlohmann::json reg_body = {{"username", username}, {"password", auth_password}};
         const auto resp = https_post(host_, port_, "/backend/register", reg_body.dump());
         if (resp.status == 409)
             throw std::runtime_error{"username already taken"};
         if (resp.status != 201)
             throw std::runtime_error{"server returned HTTP " + std::to_string(resp.status)};
+
+        std::lock_guard<std::mutex> lk(mutex_);
+        store_ = std::make_unique<MessageStore>(username + ".db");
+        encrypted_dek_   = crypto_->create_dek(key_pin, username).at("encrypted_dek");
+        encrypted_state_ = crypto_->create_state().at("encrypted_state");
+        current_user_    = username;
+        store_->save_dek(username, encrypted_dek_.dump());
+        store_->save_encrypted_state(username, encrypted_state_.dump());
     } catch (const std::exception& e) {
         app_->push_status(std::string("Registration failed: ") + e.what());
         return;
@@ -328,12 +327,8 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
         }
 
         // First WS frame is the login (no tokens — the connection is the session).
+        // The server echoes {"username":"..."} on success; advance_to_chat fires there.
         send_login_frame(username, auth_password);
-        publish_key_bundle();
-
-        app_->set_connected(true);
-        app_->advance_to_chat(username);
-        app_->push_status("Logged in as '" + username + "' — session open.");
     } catch (const std::exception& e) {
         epic_log("do_login: exception: " + std::string(e.what()));
         app_->push_status(std::string("Login failed: ") + e.what());
@@ -553,7 +548,15 @@ void Client::handle_ws_frame(const std::string& json_frame) {
 
     const std::string type = frame.value("type", std::string{});
     epic_log("handle_ws_frame: type=" + type);
-    if (type == "deliver_message") {
+    if (frame.contains("username") && !frame.contains("type")) {
+        // Auth confirmation: server echoes {"username":"..."} on successful login.
+        if (frame.value("username", std::string{}) == current_user_) {
+            publish_key_bundle();
+            app_->set_connected(true);
+            app_->advance_to_chat(current_user_);
+            app_->push_status("Logged in as '" + current_user_ + "' — session open.");
+        }
+    } else if (type == "deliver_message") {
         on_deliver_message(frame);
     } else if (type == "key_bundle_response") {
         on_key_bundle_response(frame);

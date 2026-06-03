@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -37,6 +38,7 @@ async def _authenticate(websocket: WebSocket) -> str | None:
         await websocket.close(code=4001, reason="authentication failed")
         return None
 
+    await websocket.send_text(json.dumps({"username": frame.username}))
     return frame.username
 
 
