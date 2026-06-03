@@ -47,6 +47,11 @@ public:
     // Return to the login screen after a logout.
     void return_to_login();
 
+    // Marshal a callback onto the UI event-loop thread. Lets background threads
+    // (e.g. the Connection read thread) run work that must not execute on them,
+    // such as tearing down the connection (which joins the read thread).
+    void run_on_ui(std::function<void()> fn);
+
     // Remove a conversation tab (e.g. after a failed send to a non-existent user).
     void remove_conversation(std::string peer);
 

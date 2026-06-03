@@ -263,32 +263,15 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
     try {
         store_ = std::make_unique<MessageStore>(db_path_for(username));
 
-        // Load the persisted DEK blob if we don't have it in memory already.
+        // Load the persisted DEK blob if we don't have it in memory already. We do
+        // NOT unlock it here: the PIN is only checked after the server validates the
+        // password (see handle_ws_frame). Unlocking before then would expose a local
+        // "wrong PIN" oracle that lets anyone probe accounts without a valid password.
         if (encrypted_dek_.is_null()) {
-            auto stored = store_->load_dek(username);
-            if (!stored) {
-                app_->push_status("No local key material for '" + username +
-                                  "'. Register on this device first.");
-                return;
-            }
-            encrypted_dek_ = nlohmann::json::parse(*stored);
+            if (auto stored = store_->load_dek(username))
+                encrypted_dek_ = nlohmann::json::parse(*stored);
         }
-        try {
-            std::lock_guard<std::mutex> lk(mutex_);
-            crypto_->unlock_dek(key_pin, username, encrypted_dek_);
-        } catch (const std::exception&) {
-            ++pin_fail_count_;
-            if (pin_fail_count_ < 3) {
-                app_->push_status("Incorrect PIN — " + std::to_string(3 - pin_fail_count_) +
-                                  " attempt(s) remaining before lockout.");
-            } else {
-                int lockout_num = pin_fail_count_ - 2;
-                int delay = std::min(5 * (1 << (lockout_num - 1)), 300);
-                app_->start_lockout(delay);
-            }
-            return;
-        }
-        pin_fail_count_ = 0;  // reset on success
+        pending_key_pin_ = key_pin;
 
         // Load persisted X3DH state (needed to establish new sessions after restart).
         if (encrypted_state_.is_null()) {
@@ -486,6 +469,28 @@ void Client::do_logout() {
     epic_log("do_logout: done");
 }
 
+void Client::abort_login_session() {
+    epic_log("abort_login_session");
+    // Runs on the UI thread (posted via App::run_on_ui): disconnect() joins the
+    // Connection read thread, which is where the failed PIN unlock was detected, so
+    // it cannot run there. Note: pin_fail_count_ is intentionally NOT reset, so the
+    // 3-strike lockout survives the teardown. The connection is moved out and
+    // destroyed outside the lock to avoid holding mutex_ across the thread join.
+    std::unique_ptr<Connection> conn;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        current_user_.clear();
+        conversations_.clear();
+        pending_sends_.clear();
+        encrypted_dek_   = nlohmann::json{};
+        encrypted_state_ = nlohmann::json{};
+        pending_key_pin_.clear();
+        store_.reset();
+        conn = std::move(connection_);
+    }
+    if (conn) conn->disconnect();
+}
+
 // ── Network helpers ──────────────────────────────────────────────────────────────
 
 void Client::send_login_frame(const std::string& username, const std::string& password) {
@@ -540,6 +545,47 @@ void Client::handle_ws_frame(const std::string& json_frame) {
         // Only now do we decrypt and load conversations — plaintext never enters
         // memory until the server has validated the password.
         if (frame.value("username", std::string{}) == current_user_) {
+            // Password accepted by the server — only now do we attempt the local PIN
+            // unlock. A wrong PIN (or absent key material) is therefore unreachable
+            // without a valid password, so neither can be probed as a local oracle.
+            bool have_dek = false;
+            bool pin_ok   = false;
+            {
+                std::lock_guard<std::mutex> lk(mutex_);
+                have_dek = !encrypted_dek_.is_null();
+                if (have_dek) {
+                    try {
+                        crypto_->unlock_dek(pending_key_pin_, current_user_, encrypted_dek_);
+                        pin_ok = true;
+                    } catch (const std::exception&) {
+                        pin_ok = false;
+                    }
+                }
+                pending_key_pin_.clear();
+            }
+
+            if (!have_dek) {
+                const std::string user = current_user_;
+                app_->run_on_ui([this] { abort_login_session(); });
+                app_->push_status("No local key material for '" + user +
+                                  "'. Register on this device first.");
+                return;
+            }
+            if (!pin_ok) {
+                ++pin_fail_count_;
+                if (pin_fail_count_ < 3) {
+                    app_->push_status("Incorrect PIN — " + std::to_string(3 - pin_fail_count_) +
+                                      " attempt(s) remaining before lockout.");
+                } else {
+                    int lockout_num = pin_fail_count_ - 2;
+                    int delay = std::min(5 * (1 << (lockout_num - 1)), 300);
+                    app_->start_lockout(delay);
+                }
+                app_->run_on_ui([this] { abort_login_session(); });
+                return;
+            }
+            pin_fail_count_ = 0;  // reset on success
+
             {
                 std::vector<Conversation> convs;
                 std::lock_guard<std::mutex> lk(mutex_);

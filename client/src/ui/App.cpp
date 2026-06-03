@@ -195,6 +195,11 @@ void App::return_to_login() {
     }
 }
 
+void App::run_on_ui(std::function<void()> fn) {
+    if (screen_ptr_) screen_ptr_->Post(std::move(fn));
+    else fn();
+}
+
 void App::remove_conversation(std::string peer) {
     auto do_remove = [this, p = std::move(peer)] {
         auto it = std::find_if(conversations_.begin(), conversations_.end(),

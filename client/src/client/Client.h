@@ -40,6 +40,12 @@ private:
     void do_edit(uint64_t message_id, const std::string& new_plaintext);
     void do_logout();
 
+    // Tears down a session that the server authenticated but whose local PIN unlock
+    // failed (or had no key material). Must run OFF the Connection read thread —
+    // disconnect() joins it — so callers marshal it via App::run_on_ui. Deliberately
+    // leaves pin_fail_count_ untouched so the lockout counter survives the teardown.
+    void abort_login_session();
+
     // Inbound (called from the Connection read loop, on its own thread)
     void handle_ws_frame(const std::string& json_frame);
     void on_deliver_message(const nlohmann::json& frame);
@@ -77,6 +83,12 @@ private:
     uint16_t                       port_;
     std::string                    current_user_;
     int                            pin_fail_count_{0};
+
+    // The Key PIN, held only between submitting the login frame and the server's
+    // auth confirmation, at which point it is used to unlock the DEK and cleared.
+    // Validating the password (server-side) before the PIN is what prevents a local
+    // "wrong PIN" oracle / account enumeration.
+    std::string                    pending_key_pin_;
 
     std::atomic<bool>              quit_{false};
 
