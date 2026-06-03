@@ -331,7 +331,16 @@ std::string Connection::ws_decode_frame() {
         std::string payload = ssl_read_exact(static_cast<size_t>(payload_len));
 
         // Control frames are never fragmented and may interleave data fragments.
-        if (opcode == 0x08) throw std::runtime_error{"ws: server sent close frame"};
+        if (opcode == 0x08) {
+            if (payload.size() >= 2) {
+                uint16_t code = (static_cast<uint8_t>(payload[0]) << 8)
+                              |  static_cast<uint8_t>(payload[1]);
+                std::string reason = payload.size() > 2 ? payload.substr(2) : std::string{};
+                throw std::runtime_error{"ws: close " + std::to_string(code) +
+                                         (reason.empty() ? "" : ": " + reason)};
+            }
+            throw std::runtime_error{"ws: server sent close frame"};
+        }
         if (opcode == 0x09) { ws_send_frame(0x0a, payload); continue; }  // ping → pong
         if (opcode == 0x0a) continue;                                    // pong → ignore
 

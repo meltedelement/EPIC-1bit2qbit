@@ -294,6 +294,13 @@ void Client::do_login(const std::string& username, const std::string& auth_passw
         connection_->on_disconnect([this](std::string reason) {
             epic_log("on_disconnect: " + reason);
             app_->set_connected(false);
+            if (reason.find("4001") != std::string::npos) {
+                current_user_.clear();
+                auth_password_.clear();
+                app_->push_status("Incorrect password.");
+                app_->return_to_login();
+                return;
+            }
             app_->push_status("Disconnected: " + reason);
             if (quit_.load() || current_user_.empty()) return;
             bool expected = false;
