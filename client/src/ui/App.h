@@ -47,6 +47,9 @@ public:
     // Return to the login screen after a logout.
     void return_to_login();
 
+    // Remove a conversation tab (e.g. after a failed send to a non-existent user).
+    void remove_conversation(std::string peer);
+
 private:
     void seed_placeholder_data();
 

@@ -195,6 +195,21 @@ void App::return_to_login() {
     }
 }
 
+void App::remove_conversation(std::string peer) {
+    auto do_remove = [this, p = std::move(peer)] {
+        auto it = std::find_if(conversations_.begin(), conversations_.end(),
+                               [&](const Conversation& c) { return c.peer() == p; });
+        if (it == conversations_.end()) return;
+        int idx = static_cast<int>(std::distance(conversations_.begin(), it));
+        conversations_.erase(it);
+        conv_names_.erase(conv_names_.begin() + idx);
+        if (selected_conv_ >= static_cast<int>(conversations_.size()))
+            selected_conv_ = std::max(0, static_cast<int>(conversations_.size()) - 1);
+    };
+    if (screen_ptr_) screen_ptr_->Post(do_remove);
+    else             do_remove();
+}
+
 void App::seed_placeholder_data() {
     local_username_    = "alice";
     const int64_t base = now_ms() - 3'600'000;

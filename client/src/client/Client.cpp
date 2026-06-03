@@ -561,8 +561,35 @@ void Client::handle_ws_frame(const std::string& json_frame) {
     } else if (type == "key_bundle_response") {
         on_key_bundle_response(frame);
     } else if (type == "error") {
-        epic_log("handle_ws_frame: server error: code=" + frame.value("code", std::string{}) +
-                 " detail=" + frame.value("detail", std::string{}));
+        const std::string code   = frame.value("code",   std::string{});
+        const std::string detail = frame.value("detail", std::string{});
+        epic_log("handle_ws_frame: server error: code=" + code + " detail=" + detail);
+        if (code == "no_key_bundle") {
+            // Prefer the explicit target field; fall back to parsing the detail string
+            // ("no key bundle found for 'USERNAME'") for older server builds.
+            std::string target = frame.value("target", std::string{});
+            if (target.empty()) {
+                auto close = detail.rfind('\'');
+                if (close != std::string::npos && close > 0) {
+                    auto open = detail.rfind('\'', close - 1);
+                    if (open != std::string::npos && open < close - 1)
+                        target = detail.substr(open + 1, close - open - 1);
+                }
+            }
+            if (!target.empty()) {
+                {
+                    std::lock_guard<std::mutex> lk(mutex_);
+                    pending_sends_.erase(target);
+                    // Drop the conversation if it has no messages — it was opened
+                    // just to attempt this send, and the user doesn't exist.
+                    auto it = conversations_.find(target);
+                    if (it != conversations_.end() && it->second.messages().empty())
+                        conversations_.erase(it);
+                }
+                app_->remove_conversation(target);
+                app_->push_status("User '" + target + "' not found.");
+            }
+        }
     } else {
         epic_log("handle_ws_frame: unhandled type=" + type);
     }
