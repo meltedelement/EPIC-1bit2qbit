@@ -129,6 +129,7 @@ class TestWebSocketMessages:
             with patch(_MSG_SL, return_value=_empty_drain()):
                 with _client.websocket_connect("/ws") as ws:
                     ws.send_text(_login_frame())
+                    ws.receive_text()  # consume auth confirmation {"username": ...}
                     ws.send_text("x" * 16385)
                     with pytest.raises(WebSocketDisconnect) as exc:
                         ws.receive_text()
