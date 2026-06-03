@@ -66,6 +66,8 @@ class RateLimitConfig(BaseModel):
     register_window_seconds: int
     ws_auth_fail_limit: int
     ws_auth_fail_window_seconds: int
+    kb_request_limit: int
+    kb_request_window_seconds: int
 
 
 class Config(BaseModel):

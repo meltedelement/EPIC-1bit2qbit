@@ -26,6 +26,8 @@ register_limit               = 5
 register_window_seconds      = 60
 ws_auth_fail_limit           = 10
 ws_auth_fail_window_seconds  = 900
+kb_request_limit             = 1
+kb_request_window_seconds    = 3600
 
 [logging.stdout]
 enabled     = true

@@ -30,6 +30,11 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     application.state.rate_limiter = RateLimiter(max_window_seconds=max_window)
     logger.info("Rate limiter initialized")
 
+    application.state.kb_limiter = RateLimiter(
+        max_window_seconds=config.rate_limiting.kb_request_window_seconds
+    )
+    logger.info("Key bundle rate limiter initialized")
+
     batcher_task = asyncio.create_task(batcher.loop(), name="batcher")
     ttl_task = asyncio.create_task(ttl_cleanup.loop(), name="ttl-cleanup")
 

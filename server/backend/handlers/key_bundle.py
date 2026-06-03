@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
+from ..config.config import config
 from ..database.db import SessionLocal
 from ..database.models import KeyBundle, OneTimePreKey
 from ..schemas.ws import (
@@ -55,6 +56,28 @@ async def handle_publish_key_bundle(frame: PublishKeyBundleFrame, ctx: WsContext
 
 
 async def handle_request_key_bundle(frame: RequestKeyBundleFrame, ctx: WsContext) -> None:
+    rl = config.rate_limiting
+    retry_after = ctx.kb_limiter.hit(
+        f"{ctx.username}:{frame.target_username}",
+        rl.kb_request_limit,
+        rl.kb_request_window_seconds,
+    )
+    if retry_after:
+        logger.warning(
+            "key bundle request rate limited: requester=%r target=%r retry_after=%ds",
+            ctx.username,
+            frame.target_username,
+            retry_after,
+        )
+        await ctx.websocket.send_text(
+            ErrorFrame(
+                code="rate_limited",
+                detail=f"retry after {retry_after}s",
+                target=frame.target_username,
+            ).model_dump_json()
+        )
+        return
+
     error: str | None = None
     response: KeyBundleResponseFrame | None = None
 

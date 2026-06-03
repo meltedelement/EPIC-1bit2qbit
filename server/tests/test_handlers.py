@@ -20,6 +20,11 @@ def _login_frame(username="alice"):
     return json.dumps({"username": username, "password": "irrelevant"})
 
 
+def _login(ws, username="alice") -> None:
+    ws.send_text(_login_frame(username=username))
+    ws.receive_text()  # consume auth confirmation {"username": ...}
+
+
 def _messaging_db():
     """Baseline messaging mock: drain returns empty, scalar returns None."""
     db = MagicMock()
@@ -57,7 +62,7 @@ class TestFrameDispatch:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     ws.send_text(json.dumps({"type": "not_a_real_type"}))
                     frame = json.loads(ws.receive_text())
 
@@ -69,7 +74,7 @@ class TestFrameDispatch:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     for _ in range(4):
                         ws.send_text("not json")
                         ws.receive_text()
@@ -85,7 +90,7 @@ class TestFrameDispatch:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     for _ in range(4):
                         ws.send_text("not json")
                         ws.receive_text()
@@ -128,7 +133,7 @@ class TestSendMessage:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     ws.send_text(self._frame())
                     frame = json.loads(ws.receive_text())
 
@@ -142,7 +147,7 @@ class TestSendMessage:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     ws.send_text(self._frame())
 
         added = [type(c.args[0]).__name__ for c in msg_db.add.call_args_list]
@@ -160,7 +165,7 @@ class TestSendMessage:
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with patch.object(_app.state.sessions, "get", return_value=bob_ws):
                     with _client.websocket_connect("/ws") as ws:
-                        ws.send_text(_login_frame())
+                        _login(ws)
                         ws.send_text(self._frame(mid=mid))
 
         bob_ws.send_text.assert_awaited_once()
@@ -179,7 +184,7 @@ class TestSendMessage:
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with patch.object(_app.state.sessions, "get", return_value=bob_ws):
                     with _client.websocket_connect("/ws") as ws:
-                        ws.send_text(_login_frame())
+                        _login(ws)
                         ws.send_text(self._frame())
 
         added = [type(c.args[0]).__name__ for c in msg_db.add.call_args_list]
@@ -194,7 +199,7 @@ class TestSendMessage:
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with patch.object(_app.state.sessions, "get", return_value=bob_ws):
                     with _client.websocket_connect("/ws") as ws:
-                        ws.send_text(_login_frame())
+                        _login(ws)
                         ws.send_text(self._frame())
 
         added = [type(c.args[0]).__name__ for c in msg_db.add.call_args_list]
@@ -207,7 +212,7 @@ class TestSendMessage:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     ws.send_text(self._frame(recipient="carol"))  # different recipient
                     frame = json.loads(ws.receive_text())
 
@@ -221,7 +226,7 @@ class TestSendMessage:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     ws.send_text(self._frame())
                     frame = json.loads(ws.receive_text())
 
@@ -235,7 +240,7 @@ class TestSendMessage:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     ws.send_text(self._frame())
                     frame = json.loads(ws.receive_text())
 
@@ -250,7 +255,7 @@ class TestSendMessage:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     ws.send_text(self._frame(ciphertext="updated_ct"))
 
         assert existing.ciphertext == "updated_ct"
@@ -268,7 +273,7 @@ class TestSendMessage:
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with patch.object(_app.state.sessions, "get", return_value=bob_ws):
                     with _client.websocket_connect("/ws") as ws:
-                        ws.send_text(_login_frame())
+                        _login(ws)
                         ws.send_text(self._frame(ciphertext="updated_ct"))
 
         assert existing.ciphertext == "updated_ct"
@@ -289,7 +294,7 @@ class TestMidValidation:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     ws.send_text(self._frame(mid="not-a-valid-mid"))
                     frame = json.loads(ws.receive_text())
         assert frame["type"] == "error"
@@ -300,7 +305,7 @@ class TestMidValidation:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     ws.send_text(self._frame(mid=_valid_mid(sender="carol")))
                     frame = json.loads(ws.receive_text())
         assert frame["type"] == "error"
@@ -311,7 +316,7 @@ class TestMidValidation:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     ws.send_text(self._frame(mid=_valid_mid(recipient="carol"), recipient="bob"))
                     frame = json.loads(ws.receive_text())
         assert frame["type"] == "error"
@@ -323,7 +328,7 @@ class TestMidValidation:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     ws.send_text(self._frame(mid=f"alice:bob:{stale_ts}"))
                     frame = json.loads(ws.receive_text())
         assert frame["type"] == "error"
@@ -335,7 +340,7 @@ class TestMidValidation:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     ws.send_text(self._frame(mid=f"alice:bob:{future_ts}"))
                     frame = json.loads(ws.receive_text())
         assert frame["type"] == "error"
@@ -363,7 +368,7 @@ class TestPublishKeyBundle:
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with patch(_KBD_SL, return_value=_session_cm(kbd_db)):
                     with _client.websocket_connect("/ws") as ws:
-                        ws.send_text(_login_frame())
+                        _login(ws)
                         ws.send_text(self._frame())
 
         added = [type(c.args[0]).__name__ for c in kbd_db.add.call_args_list]
@@ -381,7 +386,7 @@ class TestPublishKeyBundle:
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with patch(_KBD_SL, return_value=_session_cm(kbd_db)):
                     with _client.websocket_connect("/ws") as ws:
-                        ws.send_text(_login_frame())
+                        _login(ws)
                         ws.send_text(self._frame())
 
         assert existing.identity_key == "ik_base64"
@@ -394,7 +399,7 @@ class TestPublishKeyBundle:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     ws.send_text(self._frame(otpks=[]))
                     frame = json.loads(ws.receive_text())
 
@@ -407,7 +412,7 @@ class TestPublishKeyBundle:
         with patch(_VERIFY, return_value=True):
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with _client.websocket_connect("/ws") as ws:
-                    ws.send_text(_login_frame())
+                    _login(ws)
                     ws.send_text(self._frame(otpks=[""]))
                     frame = json.loads(ws.receive_text())
 
@@ -430,7 +435,7 @@ class TestRequestKeyBundle:
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with patch(_KBD_SL, return_value=_session_cm(kbd_db)):
                     with _client.websocket_connect("/ws") as ws:
-                        ws.send_text(_login_frame())
+                        _login(ws)
                         ws.send_text(self._frame())
                         frame = json.loads(ws.receive_text())
 
@@ -451,8 +456,8 @@ class TestRequestKeyBundle:
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with patch(_KBD_SL, return_value=_session_cm(kbd_db)):
                     with _client.websocket_connect("/ws") as ws:
-                        ws.send_text(_login_frame())
-                        ws.send_text(self._frame())
+                        _login(ws)
+                        ws.send_text(self._frame("carol"))
                         frame = json.loads(ws.receive_text())
 
         assert frame["type"] == "key_bundle_response"
@@ -468,9 +473,62 @@ class TestRequestKeyBundle:
             with patch(_MSG_SL, return_value=_session_cm(msg_db)):
                 with patch(_KBD_SL, return_value=_session_cm(kbd_db)):
                     with _client.websocket_connect("/ws") as ws:
-                        ws.send_text(_login_frame())
-                        ws.send_text(self._frame())
+                        _login(ws)
+                        ws.send_text(self._frame("dave"))
                         frame = json.loads(ws.receive_text())
 
         assert frame["type"] == "error"
         assert frame["code"] == "no_key_bundle"
+
+
+class TestRequestKeyBundleRateLimit:
+    # Rate limit is keyed on (requester, target). Unique target names per test
+    # prevent cross-test interference with the shared module-level rate limiter.
+
+    def _frame(self, target):
+        return json.dumps({"type": "request_key_bundle", "target_username": target})
+
+    def test_second_request_within_window_is_blocked(self):
+        bundle = _mock_bundle()
+        kbd_db = MagicMock()
+        kbd_db.scalar.side_effect = [bundle, None]  # consumed only by the first request
+        msg_db = _messaging_db()
+
+        with patch(_VERIFY, return_value=True):
+            with patch(_MSG_SL, return_value=_session_cm(msg_db)):
+                with patch(_KBD_SL, return_value=_session_cm(kbd_db)):
+                    with _client.websocket_connect("/ws") as ws:
+                        _login(ws)
+                        ws.send_text(self._frame("rl_charlie"))
+                        first = json.loads(ws.receive_text())
+                        ws.send_text(self._frame("rl_charlie"))
+                        second = json.loads(ws.receive_text())
+
+        assert first["type"] == "key_bundle_response"
+        assert second["type"] == "error"
+        assert second["code"] == "rate_limited"
+        assert second["target"] == "rl_charlie"
+        assert kbd_db.scalar.call_count == 2  # DB not queried for the blocked request
+
+    def test_rate_limit_is_per_target_pair(self):
+        bundle = _mock_bundle()
+        kbd_db = MagicMock()
+        kbd_db.scalar.side_effect = [bundle, None, bundle, None]
+        msg_db = _messaging_db()
+
+        with patch(_VERIFY, return_value=True):
+            with patch(_MSG_SL, return_value=_session_cm(msg_db)):
+                with patch(_KBD_SL, return_value=_session_cm(kbd_db)):
+                    with _client.websocket_connect("/ws") as ws:
+                        _login(ws)
+                        ws.send_text(self._frame("rl_dave"))
+                        first = json.loads(ws.receive_text())
+                        ws.send_text(self._frame("rl_dave"))
+                        second = json.loads(ws.receive_text())
+                        ws.send_text(self._frame("rl_eve"))
+                        third = json.loads(ws.receive_text())
+
+        assert first["type"] == "key_bundle_response"
+        assert second["type"] == "error"
+        assert second["code"] == "rate_limited"
+        assert third["type"] == "key_bundle_response"  # different target, unaffected
